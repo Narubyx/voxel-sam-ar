@@ -218,11 +218,11 @@ def repair(mesh: Any, max_iters: int = 3) -> Any:
             mesh = max(parts, key=lambda p: p.area)
         try:
             trimesh.repair.fill_holes(mesh)
-        except Exception:  # noqa: BLE001 - fill is best-effort per iteration
+        except Exception:  # noqa: BLE001, S110 - fill is best-effort per iteration
             pass
         try:
             trimesh.repair.fix_winding(mesh)
-        except Exception:  # noqa: BLE001 - fix_winding is best-effort
+        except Exception:  # noqa: BLE001, S110 - fix_winding is best-effort
             pass
         if bool(mesh.is_watertight) and float(mesh.volume) < 0:
             mesh.invert()
@@ -266,7 +266,7 @@ def check(mesh: Any) -> MeshReport:
     import numpy as np
 
     try:
-        nv, nf = int(len(mesh.vertices)), int(len(mesh.faces))
+        nv, nf = len(mesh.vertices), len(mesh.faces)
     except TypeError:
         return _failure("empty or invalid mesh")
     if nv == 0 or nf == 0:
@@ -372,7 +372,7 @@ def _write_usda(mesh: Any, usda_path: Path) -> tuple[int, int]:
         "    }\n}\n"
     )
     usda_path.write_text(usda, encoding="utf-8")
-    return int(len(verts)), int(len(faces))
+    return len(verts), len(faces)
 
 
 def _validate_usdz(usdz_path: Path, expect_points: int) -> None:
@@ -407,8 +407,9 @@ def to_usdz(glb_path: str | Path, usdz_path: str | Path, timeout: int = 300) -> 
     No system dependencies: works the same locally and in the Sandbox.
     """
     import tempfile
-    import trimesh
     import zipfile
+
+    import trimesh
 
     _ = timeout  # reserved for future external converters
     mesh = trimesh.load(str(glb_path), force="mesh")
@@ -422,15 +423,14 @@ def to_usdz(glb_path: str | Path, usdz_path: str | Path, timeout: int = 300) -> 
 
 
 def summarize_inputs(workdir: str | Path) -> dict[str, Any]:
-    import numpy as np
 
     verts, normals, faces, meta = load_inputs(workdir)
     return {
         **meta,
-        "num_vertices": int(len(verts)),
+        "num_vertices": len(verts),
         "has_normals": normals is not None,
         "has_faces": faces is not None,
-        "num_faces_in": int(len(faces)) if faces is not None else 0,
+        "num_faces_in": len(faces) if faces is not None else 0,
         "bbox_min": [float(c) for c in verts.min(axis=0)],
         "bbox_max": [float(c) for c in verts.max(axis=0)],
     }

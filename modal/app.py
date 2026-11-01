@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-import io
 import json
 import logging
 import os
@@ -34,12 +33,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 import cv2
-import modal
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+import modal
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -203,7 +203,7 @@ def read_video_frames(video_path: str) -> tuple[list[np.ndarray], float]:
     short = min(h0, w0)
     scale = TARGET_SHORT_SIDE / short if short > TARGET_SHORT_SIDE else 1.0
     if scale != 1.0:
-        new_w, new_h = int(round(w0 * scale)), int(round(h0 * scale))
+        new_w, new_h = round(w0 * scale), round(h0 * scale)
         frames = [cv2.resize(f, (new_w, new_h), interpolation=cv2.INTER_AREA) for f in frames]
     log.info(
         "Decoded video: %d frames %.1f fps %dx%d -> scale %.3f",
@@ -225,7 +225,7 @@ def select_keyframe_indices(total: int, num: int) -> list[int]:
     """Evenly spaced indices covering [0, total-1] (endpoints included)."""
     if num >= total:
         return list(range(total))
-    return sorted({int(round(i * (total - 1) / (num - 1))) for i in range(num)})
+    return sorted({round(i * (total - 1) / (num - 1)) for i in range(num)})
 
 
 def refine_by_sharpness(
@@ -357,7 +357,7 @@ class SamVideoAdapter:
         # on failure the error propagates as backend unavailable.
         try:
             self._predictor = SAM2VideoPredictor.from_pretrained(SAM2_CHECKPOINT)
-        except Exception as exc:  # noqa: BLE001 - any failure invalidates the backend
+        except Exception as exc:
             raise SamBackendError(f"Could not load SAM2: {exc}") from exc
 
     def _load_sam_vith_optflow(self) -> None:
@@ -483,11 +483,11 @@ class SamVideoAdapter:
         points = [(float(x), float(y))]
         prev_gray = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
         prev_pts = np.array([[[x, y]]], dtype=np.float32)
-        lk_params = dict(
-            winSize=(FLOW_WINDOW, FLOW_WINDOW),
-            maxLevel=3,
-            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 20, 0.03),
-        )
+        lk_params = {
+            "winSize": (FLOW_WINDOW, FLOW_WINDOW),
+            "maxLevel": 3,
+            "criteria": (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 20, 0.03),
+        }
         for f in frames[1:]:
             gray = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
             next_pts, status, _ = cv2.calcOpticalFlowPyrLK(
@@ -714,7 +714,7 @@ def ready() -> dict[str, Any]:
     """Checks that the GPU responds (cold start may take ~60-120 s)."""
     try:
         backend = Segmenter().backend_name.remote()
-    except Exception as exc:  # noqa: BLE001 - reported as not-ready
+    except Exception as exc:
         raise HTTPException(status_code=503, detail=f"GPU not ready: {exc}") from exc
     return {"ready": True, "sam_backend": backend}
 
@@ -728,7 +728,9 @@ def _validate_point(x: float, y: float) -> None:
 
 @web_app.post("/segment", response_model=SegmentResponse)
 async def segment_multipart(
-    file: UploadFile = File(description="360° .mp4/.mov video of the object"),
+    file: UploadFile = File(  # noqa: B008 - FastAPI dependency-injection idiom
+        description="360° .mp4/.mov video of the object"
+    ),
     x: float = Form(description="Initial point x coord (px)"),
     y: float = Form(description="Initial point y coord (px)"),
     num_keyframes: int = Form(default=DEFAULT_NUM_KEYFRAMES),

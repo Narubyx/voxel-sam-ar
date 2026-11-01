@@ -19,6 +19,7 @@ an autonomous agent (feedback loop, max 10 cycles) and publish a WebAR-ready
 - [x] Phase 2 — `baseten/`: `geometry.json` via `muse-spark-open-1026` + silhouette fallback
 - [x] Phase 3 — `agent/`: watertight feedback loop (baseline + model, ≤10 cycles, GLB+USDZ)
 - [x] Phase 4 — `web/`: Vite console + `model-viewer` viewer + WebAR QR
+- [x] Phase 5 — `scripts/` + `assets/` + CI: E2E pipeline check, golden geometry, demo video
 
 Detailed file plan: [docs/PLAN.md](docs/PLAN.md).
 
@@ -157,6 +158,26 @@ run manifest, and presents the `model-viewer` viewer (GLB + USDZ) with a QR to
 this same page for opening it on the phone and tapping AR. Includes real demo
 artifacts in `web/public/{demo,models}`. Mobile demo details: [web/README.md](web/README.md).
 
+## Quickstart — Step 5 (E2E, CI & demo)
+
+```bash
+# Fully offline smoke test (synthetic keyframes, no GPU/secrets):
+./scripts/e2e.sh --local
+
+# Full rehearsal against the deployed API (needs MODAL_URL + a video):
+MODAL_URL=https://<app>.modal.run ./scripts/e2e.sh --video assets/demo.mp4 --x 320 --y 240
+# → e2e_out/e2e_<ts>/{kf/, geometry.json, runs/<run_id>/{model.glb, model.usdz, manifest.json}}
+
+# Deterministic demo assets (golden geometry + local-only mp4):
+python scripts/make_demo_assets.py --video
+python scripts/make_demo_assets.py --check   # what CI's golden job runs
+```
+
+Pushes run [.github/workflows/ci.yml](.github/workflows/ci.yml): `compileall` +
+`ruff` (backend), `tsc --noEmit` (web) and the golden geometry test. Any step
+failing aborts `e2e.sh` with a non-zero exit; the mesh step needs
+`pip install "trimesh[easy]"` (else it skips, or fails with `--require-mesh`).
+
 ## Layout
 
 ```
@@ -177,6 +198,9 @@ voxel-sam-ar/
     loop.py           # STEP 3: orchestrator (local + Modal Sandbox, ≤10 cycles)
     requirements.txt
   web/                # STEP 4: Vite console + model-viewer + QR (see web/README.md)
+  scripts/            # STEP 5: e2e.sh pipeline check + make_demo_assets.py
+  assets/             # STEP 5: expected_geometry.json golden (demo.mp4 generated locally)
+  .github/workflows/  # STEP 5: CI (compile + ruff + tsc + golden)
 ```
 
 ## Full demo flow

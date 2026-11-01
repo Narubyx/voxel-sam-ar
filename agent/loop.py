@@ -26,7 +26,6 @@ import argparse
 import base64
 import json
 import logging
-import shutil
 import subprocess
 import sys
 import time
@@ -36,10 +35,8 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from agent.mesh_tools import MeshReport
     from agent.prompts import MAX_CYCLES, SYSTEM_PROMPT, build_user_prompt, extract_code
 except ImportError:  # run with cwd=agent/
-    from mesh_tools import MeshReport
     from prompts import MAX_CYCLES, SYSTEM_PROMPT, build_user_prompt, extract_code
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -138,6 +135,7 @@ class LocalBackend:
                 capture_output=True,
                 text=True,
                 timeout=self.exec_timeout,
+                check=False,
             )
             return ExecResult(proc.returncode, proc.stdout[-8000:], proc.stderr[-8000:],
                               time.monotonic() - start)
@@ -209,7 +207,7 @@ class ModalBackend:
         for rp in remotes:  # put_file does not overwrite: idempotent cleanup
             try:
                 self.volume.remove_file(rp)
-            except Exception:  # noqa: BLE001 - missing or other; put will tell
+            except Exception:  # noqa: BLE001, S110 - missing or other; put will tell
                 pass
         with tempfile.TemporaryDirectory(prefix="voxel_agent_") as tmp:
             locals_: list[tuple[str, str]] = []
@@ -273,7 +271,7 @@ class ModalBackend:
             return
         try:
             sb.terminate()
-        except Exception:  # noqa: BLE001 - best-effort close
+        except Exception:  # noqa: BLE001, S110 - best-effort close
             pass
 
 
@@ -299,8 +297,8 @@ class ModelClient:
 
     def draft_script(self, geometry_summary: dict[str, Any], history: list[dict[str, Any]],
                      cycle: int) -> str:
-        import time as _t
         import random as _r
+        import time as _t
 
         user = build_user_prompt(geometry_summary, history, cycle)
         last: Exception | None = None
@@ -341,10 +339,10 @@ def _geometry_summary_local(geometry_path: Path) -> dict[str, Any]:
     verts = np.asarray(geo["vertices"], dtype=np.float64)
     return {
         "source": geo.get("source"),
-        "num_vertices": int(len(verts)),
+        "num_vertices": len(verts),
         "has_normals": bool(geo.get("normals")),
         "has_faces": bool(geo.get("faces")),
-        "num_faces_in": int(len(geo["faces"])) if geo.get("faces") else 0,
+        "num_faces_in": len(geo["faces"]) if geo.get("faces") else 0,
         "confidence": geo.get("confidence"),
         "estimated_height_m": geo.get("estimated_height_m"),
         "bbox_min": [float(c) for c in verts.min(axis=0)],

@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.ruff_cache/
 .venv/
 venv/
 # Modal
@@ -13,6 +14,7 @@ venv/
 assets/demo*.mp4
 jobs/
 runs/
+e2e_out/
 *.glb
 *.gltf
 *.usdz

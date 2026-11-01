@@ -1,0 +1,2 @@
+# Keep shell scripts LF everywhere so Linux CI/local bash never sees CRLF.
+*.sh text eol=lf

@@ -11,13 +11,13 @@ from pathlib import Path
 WORK = Path(__file__).resolve().parent
 sys.path.insert(0, str(WORK))
 
-import mesh_tools as mt  # noqa: E402
+import mesh_tools as mt
 
 METHOD = "faces+repair"
 
 
 def main() -> int:
-    verts, normals, faces, meta = mt.load_inputs(WORK)
+    verts, normals, faces, _meta = mt.load_inputs(WORK)
     if faces is not None:
         mesh = mt.build_from_faces(verts, faces)
     else:
@@ -30,8 +30,8 @@ def main() -> int:
     payload = json.loads(report.to_json())
     payload["stats"]["method"] = METHOD
     payload["stats"]["input"] = {
-        "vertices": int(len(verts)),
-        "faces_in": int(len(faces)) if faces is not None else 0,
+        "vertices": len(verts),
+        "faces_in": len(faces) if faces is not None else 0,
     }
     (WORK / "report.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload))

@@ -103,7 +103,7 @@ class GeometryEstimate(BaseModel):
                 raise ValueError(f"edges[{i}] must be a pair, is: {row}.")
             a, b = row
             if not isinstance(a, int) or not isinstance(b, int):
-                raise ValueError(f"edges[{i}] must contain integers: {row}.")
+                raise TypeError(f"edges[{i}] must contain integers: {row}.")
             if a < 0 or b < 0:
                 raise ValueError(f"edges[{i}] with negative index: {row}.")
             if a == b:

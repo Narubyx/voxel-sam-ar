@@ -70,11 +70,19 @@ Phase 3 acceptance: mesh with `watertight=true`, `winding_consistent=true`,
 Phase 4 acceptance: upload video → watch the agent log live → scan QR →
 model projected next to the real object on the phone.
 
-## Phase 5 — E2E, CI & demo
+## Phase 5 — E2E, CI & demo — DELIVERED
 
-- `scripts/e2e.sh`: test video → `/segment` → Baseten → agent → `model.glb`; fails if any step returns errors.
-- `.github/workflows/ci.yml`: `py_compile` + `ruff` (backend), `tsc --noEmit` (web).
-- `assets/demo.mp4` (optional, <25 MB) + `assets/expected_geometry.json` for golden tests.
+- `scripts/e2e.sh`: test video → `/segment` → Baseten → agent → `model.glb`
+  (+ `model.usdz`); fails if any step returns errors. `--local` runs the same
+  chain fully offline on synthetic keyframes (no GPU/secrets).
+- `scripts/make_demo_assets.py`: deterministic synthetic keyframes +
+  `assets/expected_geometry.json` via the real Phase 2 fallback; `--check` is
+  the golden test, `--video` assembles `assets/demo.mp4` with ffmpeg.
+- `.github/workflows/ci.yml`: `compileall` + `ruff` (backend), `tsc --noEmit`
+  (web), golden geometry test (light deps). Backend was left `ruff`-clean so
+  the gate is green; `.gitattributes` pins LF for `*.sh`.
+- `assets/demo.mp4` (optional, <25 MB, generated locally, gitignored) +
+  `assets/expected_geometry.json` (committed) for golden tests.
 
 ---
 

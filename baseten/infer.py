@@ -180,7 +180,7 @@ def estimate_remote(
             )
             estimate.source = "muse-spark-open-1026"
             return estimate
-        except Exception as exc:  # noqa: BLE001 - classified below
+        except Exception as exc:
             last_err = exc
             name = type(exc).__name__
             retryable = any(
@@ -241,7 +241,7 @@ def estimate_from_silhouettes(
     if not (0.001 < height_m < 50.0):
         raise GeometryValidationError(f"height_m out of range: {height_m}.")
 
-    h, w = frames[0].shape[:2]
+    _h, w = frames[0].shape[:2]
     cx_img = w / 2.0
     masks = [(arr.sum(axis=2) > MASK_THRESHOLD) for arr in frames]
     bboxes: list[tuple[int, int] | None] = []
