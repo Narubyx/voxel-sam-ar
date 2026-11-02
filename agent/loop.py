@@ -14,7 +14,7 @@ Usage:
 Env (cycles 1..N, require a model):
   META_MODEL_API_KEY   (without key: baseline only, then report)
   META_MODEL_BASE_URL  (OpenAI-compatible endpoint, required with key)
-  META_MODEL_NAME      (default muse-spark-1.3-max)
+  META_MODEL_NAME      (default muse-spark-1.3)
 
 Exit codes: 0 success (watertight mesh) · 3 cycles exhausted / insufficient
 baseline without key · 2 invalid input · 1 infrastructure error.
@@ -43,7 +43,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 log = logging.getLogger("voxel-sam-ar.agent")
 
 AGENT_DIR = Path(__file__).resolve().parent
-DEFAULT_MODEL_NAME = "muse-spark-1.3-max"
+DEFAULT_MODEL_NAME = "muse-spark-1.3"
 RUNS_VOLUME = "voxel-sam-ar-runs"
 STDERR_TAIL = 2000
 
