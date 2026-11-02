@@ -26,7 +26,7 @@ def main() -> int:
         mesh = mt.triangulate(verts, normals, method="poisson", depth=8)
     mesh = mt.repair(mesh, max_iters=3)
     report = mt.check(mesh)
-    mt.save_glb(mesh, WORK / "candidate.glb")
+    mt.save_glb(mesh, WORK / "candidate.glb", base_color=_meta.get("base_color"))
     payload = json.loads(report.to_json())
     payload["stats"]["method"] = METHOD
     payload["stats"]["input"] = {

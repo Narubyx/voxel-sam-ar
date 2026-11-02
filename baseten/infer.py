@@ -206,6 +206,7 @@ def estimate_remote(
                 max_retries=INSTRUCTOR_RETRIES,
             )
             estimate.source = "muse-spark-open-1026"
+            estimate.base_color = dominant_color(frames)
             return estimate
         except Exception as exc:
             last_err = exc
@@ -367,11 +368,22 @@ def estimate_from_silhouettes(
         source_keyframes=used_frames,
         confidence=0.35,
         estimated_height_m=height_m,
+        base_color=dominant_color(frames),
         notes=(
             f"Silhouette fallback: uniform 360° orbit, {n_valid}/{n_total} valid "
             f"views, {n_scan} scanlines, scale {s:.5f} m/px from height {height_m} m."
         ),
     )
+
+
+def dominant_color(frames: list[np.ndarray]) -> list[float] | None:
+    """Median RGB of object pixels (above the mask threshold) over all views."""
+    px = np.concatenate([a.reshape(-1, 3) for a in frames], axis=0)
+    obj = px[px.sum(axis=1) > MASK_THRESHOLD]
+    if obj.size == 0:
+        return None
+    med = np.median(obj.astype(np.float64), axis=0) / 255.0
+    return [float(c) for c in med]
 
 
 # ---------------------------------------------------------------------------

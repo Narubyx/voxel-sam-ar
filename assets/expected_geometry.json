@@ -16078,5 +16078,10 @@
   ],
   "confidence": 0.35,
   "estimated_height_m": 0.2,
+  "base_color": [
+    1.0,
+    1.0,
+    1.0
+  ],
   "notes": "Silhouette fallback: uniform 360\u00b0 orbit, 12/12 valid views, 24 scanlines, scale 0.00238 m/px from height 0.2 m."
 }

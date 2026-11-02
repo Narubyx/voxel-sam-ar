@@ -86,7 +86,7 @@ def _max_abs_diff(a: Any, b: Any) -> float:
 def compare_golden(expected: dict[str, Any], actual: dict[str, Any]) -> list[str]:
     """Returns human-readable mismatches ([] means the golden test passes)."""
     problems: list[str] = []
-    for key in ("source", "units", "coordinate_frame", "notes"):
+    for key in ("source", "units", "coordinate_frame", "notes", "base_color"):
         if expected.get(key) != actual.get(key):
             problems.append(f"{key}: {expected.get(key)!r} != {actual.get(key)!r}")
     for key in ("vertices", "normals", "edges", "faces", "source_keyframes"):

@@ -22,7 +22,13 @@ CANDIDATE_CONTRACT = """CANDIDATE SCRIPT CONTRACT (mandatory):
 - The script must: 1) load the geometry, 2) build/repair/smooth the mesh
   ONLY with mesh_tools functions, 3) write `candidate.glb` and `report.json`
   (serialized MeshReport) to that same directory, 4) print the report JSON.
+- Pass meta.get("base_color") to save_glb so AR shows the object painted.
 - Forbidden: network, threads, absolute paths outside the working directory."""
+
+# Glossy-dielectric PBR defaults (ceramic/plastic): specular highlights react
+# to the viewer environment instead of a flat matte look.
+DEFAULT_ROUGHNESS = 0.35
+DEFAULT_METALLIC = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +88,10 @@ def load_inputs(workdir: str | Path) -> tuple[Any, Any, Any, dict[str, Any]]:
             raise ValueError(f"invalid faces: shape {faces.shape}.")
         if faces.min() < 0 or faces.max() >= len(verts):
             raise ValueError("faces with out-of-range indices.")
-    meta = {k: geo.get(k) for k in ("source", "confidence", "estimated_height_m", "units")}
+    meta = {
+        k: geo.get(k)
+        for k in ("source", "confidence", "estimated_height_m", "units", "base_color")
+    }
     return verts, normals, faces, meta
 
 
@@ -320,7 +329,39 @@ def check(mesh: Any) -> MeshReport:
 # ---------------------------------------------------------------------------
 
 
-def save_glb(mesh: Any, path: str | Path) -> Path:
+def _valid_rgb(value: Any) -> list[float] | None:
+    """RGB in [0, 1] as floats, else None (never fails a cycle on color)."""
+    try:
+        rgb = [float(c) for c in value]
+    except (TypeError, ValueError):
+        return None
+    if len(rgb) != 3 or any(not 0.0 <= c <= 1.0 for c in rgb):
+        return None
+    return rgb
+
+
+def save_glb(
+    mesh: Any,
+    path: str | Path,
+    base_color: Any = None,
+    roughness: float = DEFAULT_ROUGHNESS,
+    metallic: float = DEFAULT_METALLIC,
+) -> Path:
+    """Exports .glb, painting a uniform glossy PBR material when colored."""
+    rgb = _valid_rgb(base_color)
+    if rgb is not None:
+        import numpy as np
+        import trimesh
+
+        mat = trimesh.visual.material.PBRMaterial(
+            name="object",
+            baseColorFactor=[*rgb, 1.0],
+            metallicFactor=float(metallic),
+            roughnessFactor=float(roughness),
+        )
+        mesh.visual = trimesh.visual.TextureVisuals(
+            uv=np.zeros((len(mesh.vertices), 2)), material=mat
+        )
     path = Path(path)
     path.write_bytes(bytes(mesh.export(file_type="glb")))
     return path
@@ -330,9 +371,17 @@ def _fmt_vec(v: Any) -> str:
     return "(" + ", ".join(f"{float(c):.7g}" for c in v) + ")"
 
 
-def _write_usda(mesh: Any, usda_path: Path) -> tuple[int, int]:
-    """Authors a static USDA (subset: 1 Xform + 1 Mesh). Returns (N, F)."""
+def _write_usda(
+    mesh: Any,
+    usda_path: Path,
+    base_color: Any = None,
+    roughness: float = DEFAULT_ROUGHNESS,
+    metallic: float = DEFAULT_METALLIC,
+) -> tuple[int, int]:
+    """Authors a static USDA (1 Xform + 1 Mesh + optional PBR). Returns (N, F)."""
     import numpy as np
+
+    rgb = _valid_rgb(base_color)
 
     verts = np.asarray(mesh.vertices, dtype=np.float64)
     faces = np.asarray(mesh.faces, dtype=np.int64)
@@ -369,7 +418,26 @@ def _write_usda(mesh: Any, usda_path: Path) -> tuple[int, int]:
         + "        ]\n"
         "        uniform token subdivisionScheme = \"none\"\n"
         "        bool doubleSided = true\n"
-        "    }\n}\n"
+        + ("        rel material:binding = </Model/Material>\n" if rgb else "")
+        + "    }\n"
+        + (
+            "    def Material \"Material\"\n"
+            "    {\n"
+            "        token outputs:surface.connect = "
+            "</Model/Material/PBR.outputs:surface>\n"
+            "        def Shader \"PBR\"\n"
+            "        {\n"
+            "            uniform token info:id = \"UsdPreviewSurface\"\n"
+            f"            color3f inputs:diffuseColor = ({rgb[0]:.6g}, {rgb[1]:.6g}, {rgb[2]:.6g})\n"
+            f"            float inputs:roughness = {float(roughness):.6g}\n"
+            f"            float inputs:metallic = {float(metallic):.6g}\n"
+            "            token outputs:surface\n"
+            "        }\n"
+            "    }\n"
+            if rgb
+            else ""
+        )
+        + "}\n"
     )
     usda_path.write_text(usda, encoding="utf-8")
     return len(verts), len(faces)
@@ -401,7 +469,14 @@ def _validate_usdz(usdz_path: Path, expect_points: int) -> None:
         raise ValueError(f"USDZ with {len(pts) if pts else 0} points, expected {expect_points}.")
 
 
-def to_usdz(glb_path: str | Path, usdz_path: str | Path, timeout: int = 300) -> str:
+def to_usdz(
+    glb_path: str | Path,
+    usdz_path: str | Path,
+    timeout: int = 300,
+    base_color: Any = None,
+    roughness: float = DEFAULT_ROUGHNESS,
+    metallic: float = DEFAULT_METALLIC,
+) -> str:
     """Converts .glb to .usdz (authored USDA + STORED zip). Returns converter.
 
     No system dependencies: works the same locally and in the Sandbox.
@@ -415,7 +490,7 @@ def to_usdz(glb_path: str | Path, usdz_path: str | Path, timeout: int = 300) -> 
     mesh = trimesh.load(str(glb_path), force="mesh")
     with tempfile.TemporaryDirectory(prefix="voxel_usd_") as tmp:
         usda = Path(tmp) / "model.usda"
-        n_points, _ = _write_usda(mesh, usda)
+        n_points, _ = _write_usda(mesh, usda, base_color, roughness, metallic)
         with zipfile.ZipFile(usdz_path, "w", compression=zipfile.ZIP_STORED) as zf:
             zf.write(usda, arcname="model.usda")
     _validate_usdz(Path(usdz_path), n_points)

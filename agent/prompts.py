@@ -35,7 +35,7 @@ Available API (mesh_tools module, already importable):
 - repair(mesh, max_iters=1..5) -> mesh
 - smooth(mesh, method="taubin"|"laplacian", iterations, lambd, mu) -> mesh
 - check(mesh) -> MeshReport(ok, errors[], stats{})
-- save_glb(mesh, path), summarize_inputs(workdir)
+- save_glb(mesh, path, base_color=meta.get("base_color")), summarize_inputs(workdir)
 
 WORKING DIRECTORY: Path(__file__).parent (use it; absolute paths forbidden).
 SUCCESS: report.ok == true with 0 errors.

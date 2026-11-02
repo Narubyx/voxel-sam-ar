@@ -347,6 +347,7 @@ def _geometry_summary_local(geometry_path: Path) -> dict[str, Any]:
         "num_faces_in": len(geo["faces"]) if geo.get("faces") else 0,
         "confidence": geo.get("confidence"),
         "estimated_height_m": geo.get("estimated_height_m"),
+        "base_color": geo.get("base_color"),
         "bbox_min": [float(c) for c in verts.min(axis=0)],
         "bbox_max": [float(c) for c in verts.max(axis=0)],
     }
@@ -472,13 +473,25 @@ def _write_manifest(run_dir: Path, manifest: RunManifest) -> None:
     (run_dir / "manifest.json").write_text(manifest.to_json(), encoding="utf-8")
 
 
+def _run_base_color(run_dir: Path) -> Any:
+    """base_color carried in geometry.json (None when absent/invalid)."""
+    try:
+        geo = json.loads((run_dir / "geometry.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return geo.get("base_color")
+
+
 def _try_usdz(backend: LocalBackend | ModalBackend, run_dir: Path) -> dict[str, Any]:
     if isinstance(backend, LocalBackend):
         sys.path.insert(0, str(AGENT_DIR))
         try:
             from mesh_tools import to_usdz
 
-            conv = to_usdz(run_dir / "model.glb", run_dir / "model.usdz")
+            conv = to_usdz(
+                run_dir / "model.glb", run_dir / "model.usdz",
+                base_color=_run_base_color(run_dir),
+            )
             return {"ok": True, "converter": conv, "path": "model.usdz"}
         except Exception as exc:  # noqa: BLE001 - best-effort conversion
             return {"ok": False, "error": str(exc)[-500:]}
@@ -486,9 +499,11 @@ def _try_usdz(backend: LocalBackend | ModalBackend, run_dir: Path) -> dict[str, 
             sys.path.remove(str(AGENT_DIR))
     assert isinstance(backend, ModalBackend)
     snippet = (
-        "import sys;sys.path.insert(0,'/work/" + backend.run_id + "');"
+        "import json,sys;sys.path.insert(0,'/work/" + backend.run_id + "');"
         "from mesh_tools import to_usdz;"
-        f"print(to_usdz('/work/{backend.run_id}/candidate.glb','/work/{backend.run_id}/model.usdz'))"
+        f"g=json.load(open('/work/{backend.run_id}/geometry.json'));"
+        f"print(to_usdz('/work/{backend.run_id}/candidate.glb',"
+        f"'/work/{backend.run_id}/model.usdz',base_color=g.get('base_color')))"
     )
     res = backend._exec("python3", "-c", snippet, timeout=300)
     if res.exit_code != 0 or not backend.has_file("model.usdz"):

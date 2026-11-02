@@ -61,6 +61,10 @@ class GeometryEstimate(BaseModel):
     estimated_height_m: float = Field(
         gt=0.001, lt=50.0, description="Estimated real-world object height in meters."
     )
+    base_color: list[float] | None = Field(
+        default=None,
+        description="Dominant object RGB in [0, 1] for AR materials (None = unpainted).",
+    )
     notes: str = Field(default="", max_length=2000)
 
     # -- field validators ---------------------------------------------------
@@ -126,6 +130,20 @@ class GeometryEstimate(BaseModel):
                 raise ValueError(f"faces[{i}] degenerate (repeated vertices): {row}.")
         return rows
 
+    @field_validator("base_color", mode="after")
+    @classmethod
+    def _check_base_color(cls, rgb: list[float] | None) -> list[float] | None:
+        if rgb is None:
+            return None
+        if len(rgb) != 3:
+            raise ValueError(f"base_color must be RGB, is: {rgb}.")
+        vals = [float(c) for c in rgb]
+        if not all(math.isfinite(c) for c in vals):
+            raise ValueError(f"base_color with non-finite values: {rgb}.")
+        if any(c < 0.0 or c > 1.0 for c in vals):
+            raise ValueError(f"base_color outside [0, 1]: {rgb}.")
+        return vals
+
     @field_validator("source_keyframes", mode="after")
     @classmethod
     def _check_keyframes(cls, idx: list[int]) -> list[int]:
@@ -178,4 +196,5 @@ class GeometryEstimate(BaseModel):
             "keyframes": len(self.source_keyframes),
             "confidence": self.confidence,
             "estimated_height_m": self.estimated_height_m,
+            "base_color": self.base_color,
         }
