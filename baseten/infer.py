@@ -17,6 +17,7 @@ Env (remote path):
   BASETEN_API_KEY    (required for remote)
   BASETEN_BASE_URL   (default https://inference.baseten.co/v1)
   BASETEN_MODEL_NAME (default muse-spark-open-1026)
+  BASETEN_MAX_IMAGES (default 8: provider cap; views are evenly subsampled)
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ log = logging.getLogger("voxel-sam-ar.baseten")
 
 DEFAULT_BASE_URL = "https://inference.baseten.co/v1"
 DEFAULT_MODEL_NAME = "muse-spark-open-1026"
+DEFAULT_MAX_IMAGES = 8
 DEFAULT_HEIGHT_M = 0.20
 MASK_THRESHOLD = 24  # min RGB sum to count as object pixel
 TRANSPORT_RETRIES = 3
@@ -125,11 +127,33 @@ def _pil_to_data_uri(img: Image.Image, max_side: int, jpeg_q: int) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
+def subsample_views(
+    frames: list[np.ndarray], frame_indices: list[int], max_images: int
+) -> tuple[list[np.ndarray], list[int]]:
+    """Evenly spaced subset covering the full turn (deterministic)."""
+    if max_images < 1:
+        raise BasetenConfigError(f"max_images must be >= 1, got {max_images}.")
+    if len(frames) <= max_images:
+        return frames, frame_indices
+    picks = np.linspace(0, len(frames) - 1, max_images).round().astype(int)
+    order = sorted({int(i) for i in picks})
+    log.info("Subsampling %d views -> %d for the remote call.", len(frames), len(order))
+    return [frames[i] for i in order], [frame_indices[i] for i in order]
+
+
 def estimate_remote(
     frames: list[np.ndarray],
     frame_indices: list[int],
     max_side: int = 768,
     jpeg_q: int = 72,
+    max_images: int | None = None,
 ) -> GeometryEstimate:
     try:
         import instructor
@@ -140,6 +164,9 @@ def estimate_remote(
     api_key = os.environ.get("BASETEN_API_KEY", "").strip()
     if not api_key:
         raise BasetenConfigError("BASETEN_API_KEY missing.")
+    if max_images is None:
+        max_images = _env_int("BASETEN_MAX_IMAGES", DEFAULT_MAX_IMAGES)
+    frames, frame_indices = subsample_views(frames, frame_indices, max_images)
     base_url = os.environ.get("BASETEN_BASE_URL", DEFAULT_BASE_URL).strip()
     model = os.environ.get("BASETEN_MODEL_NAME", DEFAULT_MODEL_NAME).strip()
     log.info("Remote: model=%s base_url=%s (%d images).", model, base_url, len(frames))
@@ -183,6 +210,9 @@ def estimate_remote(
         except Exception as exc:
             last_err = exc
             name = type(exc).__name__
+            status = getattr(exc, "status_code", None)
+            if status is not None and status != 429 and 400 <= status < 500:
+                break  # client error (bad model, too many images…): no retry
             retryable = any(
                 k in name
                 for k in (
@@ -358,6 +388,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-remote", action="store_true", help="local fallback only")
     p.add_argument("--max-side", type=int, default=768)
     p.add_argument("--jpeg-q", type=int, default=72)
+    p.add_argument("--max-images", type=int, default=None,
+                   help=f"remote views cap (default: BASETEN_MAX_IMAGES or {DEFAULT_MAX_IMAGES})")
     return p
 
 
@@ -372,7 +404,8 @@ def main(argv: list[str] | None = None) -> int:
     estimate: GeometryEstimate | None = None
     if not args.no_remote:
         try:
-            estimate = estimate_remote(frames, indices, args.max_side, args.jpeg_q)
+            estimate = estimate_remote(frames, indices, args.max_side, args.jpeg_q,
+                                       args.max_images)
             log.info("Remote geometry OK: %s", estimate.summary())
         except BasetenConfigError as exc:
             log.warning("Remote not configured (%s); using local fallback.", exc)
