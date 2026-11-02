@@ -99,8 +99,9 @@ if [ "$LOCAL" -eq 1 ]; then
 else
   log "step 1/3: POST /segment ($VIDEO @ $X,$Y, $NUM_KEYFRAMES keyframes)"
   MODAL_URL="${MODAL_URL%/}"
-  # -L follows Modal's 303 __modal_attempt_token for long requests (GET the token).
-  if ! curl -sS -L --fail-with-body --max-time 900 -X POST "$MODAL_URL/segment" \
+  # -L follows Modal's 303 __modal_attempt_token (GET the token URL). No -X POST:
+  # a forced method is kept on redirects and Modal rejects non-GET follows.
+  if ! curl -sS -L --fail-with-body --max-time 900 "$MODAL_URL/segment" \
       -F "file=@${VIDEO};type=video/mp4" -F "x=${X}" -F "y=${Y}" \
       -F "num_keyframes=${NUM_KEYFRAMES}" -o "$WORKDIR/response.json"; then
     head -c 2000 "$WORKDIR/response.json" >&2 || true
