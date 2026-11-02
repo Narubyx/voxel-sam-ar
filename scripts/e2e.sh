@@ -99,12 +99,21 @@ if [ "$LOCAL" -eq 1 ]; then
 else
   log "step 1/3: POST /segment ($VIDEO @ $X,$Y, $NUM_KEYFRAMES keyframes)"
   MODAL_URL="${MODAL_URL%/}"
-  if ! curl -sS --fail-with-body --max-time 900 -X POST "$MODAL_URL/segment" \
+  # -L follows Modal's 303 __modal_attempt_token for long requests (GET the token).
+  if ! curl -sS -L --fail-with-body --max-time 900 -X POST "$MODAL_URL/segment" \
       -F "file=@${VIDEO};type=video/mp4" -F "x=${X}" -F "y=${Y}" \
       -F "num_keyframes=${NUM_KEYFRAMES}" -o "$WORKDIR/response.json"; then
     head -c 2000 "$WORKDIR/response.json" >&2 || true
     die "POST /segment failed (see body above)"
   fi
+  "$PYTHON" - "$WORKDIR/response.json" <<'EOF' \
+    || die "POST /segment returned invalid/empty JSON (transient?); retry e2e.sh"
+import json, sys
+resp = json.load(open(sys.argv[1], encoding="utf-8"))
+assert resp.get("keyframes"), "0 keyframes in response"
+print(f"e2e: /segment ok: job={resp.get('job_id')} "
+      f"kf={len(resp['keyframes'])} backend={resp.get('meta', {}).get('sam_backend')}")
+EOF
   "$PYTHON" - "$WORKDIR" <<'EOF'
 import base64, json, sys
 work = sys.argv[1]

@@ -514,18 +514,28 @@ class SamVideoAdapter:
         sam_indices = list(range(0, len(frames), stride))
         masks: dict[int, np.ndarray] = {}
         calls = 0
+        seed = (float(x), float(y))
         with torch.inference_mode():
             for i in sam_indices:
                 rgb = cv2.cvtColor(frames[i], cv2.COLOR_BGR2RGB)
                 pred.set_image(rgb)
-                px, py = tracked[i]
                 m, _, _ = pred.predict(
-                    point_coords=np.array([[px, py]]),
+                    point_coords=np.array([[seed[0], seed[1]]]),
                     point_labels=np.array([1]),
-                    multimask_output=False,
+                    multimask_output=True,
                 )
-                masks[i] = m[0].astype(bool).reshape(h, w)
+                # Largest-area mask: the whole object, not a part (handle, glare).
+                areas = m.reshape(m.shape[0], -1).sum(axis=1)
+                best = m[int(np.argmax(areas))].astype(bool).reshape(h, w)
+                masks[i] = best
                 calls += 1
+                # Self-correcting seed: the next frame seeds at this mask's
+                # centroid, so LK drift cannot accumulate; LK is the fallback.
+                ys, xs = np.nonzero(best)
+                if xs.size > 0:
+                    seed = (float(xs.mean()), float(ys.mean()))
+                else:
+                    seed = tracked[i]
         full = [masks[min(sam_indices, key=lambda s: abs(s - i))] for i in range(len(frames))]
         return full, "sam_vith_optflow", calls
 
