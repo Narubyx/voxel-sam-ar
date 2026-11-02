@@ -115,7 +115,9 @@ class LocalBackend:
     name = "local"
 
     def __init__(self, workdir: Path, exec_timeout: int) -> None:
-        self.workdir = workdir
+        # Absolute: run_script resolves the script against cwd=workdir, so a
+        # relative workdir would double the path (…/exec/…/exec/cycle_XX.py).
+        self.workdir = Path(workdir).resolve()
         self.exec_timeout = exec_timeout
         self.workdir.mkdir(parents=True, exist_ok=True)
 
