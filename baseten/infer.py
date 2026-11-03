@@ -73,7 +73,7 @@ Return EXCLUSIVELY a JSON with this shape (no markdown, no extra text):
 Rules: Y-up frame; |coord| <= 50; vertices spread over the WHOLE surface visible
 in the views (not just one face); `normals` with the same length as `vertices`;
 valid indices; `estimated_height_m` consistent with an everyday object.
-Prefer 100-250 vertices spread over the WHOLE surface (denser is better)
+Prefer around 100 vertices (80-120) spread over the WHOLE surface
 and include `faces` triangles whenever confident about connectivity.
 Round every float to 4 decimals to keep the JSON compact.
 The client sets the "source" field; do not include it.
@@ -209,7 +209,9 @@ def estimate_remote(
     ]
 
     last_err: Exception | None = None
+    attempts_made = 0
     for attempt in range(1, TRANSPORT_RETRIES + 1):
+        attempts_made = attempt
         try:
             estimate = client.chat.completions.create(
                 model=model,
@@ -256,7 +258,7 @@ def estimate_remote(
             backoff = 2.0**attempt + random.uniform(0, 1)
             log.warning("Remote attempt %d failed (%s); retrying in %.1fs.", attempt, exc, backoff)
             time.sleep(backoff)
-    raise BasetenTransportError(f"Baseten failed after {TRANSPORT_RETRIES} attempts: {last_err}")
+    raise BasetenTransportError(f"Baseten failed after {attempts_made} attempts: {last_err}")
 
 
 # ---------------------------------------------------------------------------
