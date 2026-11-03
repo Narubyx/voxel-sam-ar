@@ -73,8 +73,6 @@ Return EXCLUSIVELY a JSON with this shape (no markdown, no extra text):
 Rules: Y-up frame; |coord| <= 50; vertices spread over the WHOLE surface visible
 in the views (not just one face); `normals` with the same length as `vertices`;
 valid indices; `estimated_height_m` consistent with an everyday object.
-Prefer around 100 vertices (80-120) spread over the WHOLE surface
-and include `faces` triangles whenever confident about connectivity.
 Round every float to 4 decimals to keep the JSON compact.
 The client sets the "source" field; do not include it.
 """
