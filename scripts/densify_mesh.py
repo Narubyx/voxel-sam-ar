@@ -130,8 +130,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--floor-lift-mm", type=float, default=12.0)
     p.add_argument("--handle-hole", action="store_true",
                    help="boolean-drill the C-handle hole (tuned constants below)")
-    p.add_argument("--hole-center", type=float, nargs=3, default=[0.040, 0.0, 0.0])
-    p.add_argument("--hole-radius-mm", type=float, default=7.0)
+    p.add_argument("--hole-center", type=float, nargs=3, default=[0.045, 0.0, 0.0])
+    p.add_argument("--hole-radius-mm", type=float, default=10.0)
     args = p.parse_args(argv)
 
     import numpy as np
