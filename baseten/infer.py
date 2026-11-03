@@ -290,6 +290,72 @@ def _longest_run(mask_row: np.ndarray) -> tuple[int, int] | None:
     return int(starts[best]), int(ends[best])
 
 
+def _estimate_turn_period(
+    runs: dict[tuple[int, int], tuple[float, float]],
+    n_valid: int,
+    n_scan: int,
+    cx_img: float,
+) -> float | None:
+    """Turn period in keyframes (fractional) via autocorrelation, else None.
+
+    Uses the silhouette CENTER offset (handle-left vs handle-right are
+    anti-symmetric, so the full turn — not the half-turn width symmetry —
+    peaks). Returns None when the signal is flat or single-turn.
+    """
+    if n_valid < 12:
+        return None
+    sig = np.zeros(n_valid)
+    for rank in range(n_valid):
+        mids = [(runs[(rank, slot)][0] + runs[(rank, slot)][1]) / 2 - cx_img
+                for slot in range(n_scan) if (rank, slot) in runs]
+        # Mean (not median): the handle shifts only ~1/3 of the slots and the
+        # median would wash its left/right signature out.
+        sig[rank] = float(np.mean(mids)) if mids else 0.0
+    sig -= sig.mean()
+    if float(np.abs(sig).max()) < 1.0:  # symmetric object: no turn signal
+        return None
+    corr = np.correlate(sig, sig, mode="full")[n_valid - 1:]
+    corr /= corr[0]
+    lo, hi = 6, n_valid - 1
+    if hi <= lo:
+        return None
+    lag = int(lo + np.argmax(corr[lo:hi]))
+    if float(corr[lag]) < 0.3 or not 0 < lag < n_valid - 1:
+        return None
+    a, b, c = (float(corr[lag + d]) for d in (-1, 0, 1))  # parabolic refine
+    denom = a - 2 * b + c
+    delta = 0.5 * (a - c) / denom if abs(denom) > 1e-9 else 0.0
+    return float(np.clip(lag + delta, lo, hi))
+
+
+def _select_and_densify_turn(
+    runs: dict[tuple[int, int], tuple[float, float]],
+    n_valid: int,
+    n_scan: int,
+    period: float,
+) -> tuple[dict[tuple[int, int], tuple[float, float]], int]:
+    """One turn window + midpoint densify. Cross-turn merging needs sub-0.25kf
+    period precision the estimator can't guarantee (and turntables drift), so
+    instead take floor(period)+1 consecutive views (always a small gap, never
+    an overlap) and interpolate same-turn midpoints back to ~2x views."""
+    w = min(n_valid, max(6, int(period) + 1))
+    out: dict[tuple[int, int], tuple[float, float]] = {}
+    for j in range(w):
+        nxt = (j + 1) % w
+        for s in range(n_scan):
+            a = runs.get((j, s))
+            b = runs.get((nxt, s))
+            if a is not None:
+                out[(2 * j, s)] = a
+            if a is not None and b is not None:
+                out[(2 * j + 1, s)] = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+            elif a is not None:
+                out[(2 * j + 1, s)] = a
+            elif b is not None:
+                out[(2 * j + 1, s)] = b
+    return out, 2 * w
+
+
 def estimate_from_silhouettes(
     frames: list[np.ndarray],
     frame_indices: list[int],
@@ -362,6 +428,34 @@ def estimate_from_silhouettes(
                     continue
             runs[(rank, slot)] = (float(run[0]), float(run[1]))
 
+    # Tangent de-collapse: slots narrower than half the view's median width
+    # (rim/base tangent rows) borrow the nearest wide run, so end rings keep
+    # their true radius instead of pinching toward the axis.
+    for rank in range(n_valid):
+        widths = [runs[(rank, s)][1] - runs[(rank, s)][0]
+                  for s in range(n_scan) if (rank, s) in runs]
+        if not widths:
+            continue
+        floor = float(np.median(widths)) * 0.5
+        for slot in range(n_scan):
+            run = runs.get((rank, slot))
+            if run is None or run[1] - run[0] >= floor:
+                continue
+            for d in range(1, n_scan):
+                cand = runs.get((rank, slot - d), runs.get((rank, slot + d)))
+                if cand is not None and cand[1] - cand[0] >= floor:
+                    runs[(rank, slot)] = cand
+                    break
+
+    # Phase 1.5: turn-aware resampling. A video can span 2+ turns; mapping
+    # kf index linearly to 360° would clone the handle at several azimuths.
+    # Detect the turn period and resample all turns onto one uniform ring.
+    resampled = False
+    period = _estimate_turn_period(runs, n_valid, n_scan, cx_img)
+    if period is not None and period < n_valid * 0.95:
+        runs, n_valid = _select_and_densify_turn(runs, n_valid, n_scan, period)
+        resampled = True
+
     # Phase 2: circular median of edge offsets across neighboring views.
     # Kills isolated mask spikes; real features (handle) span many views
     # and survive.
@@ -375,8 +469,11 @@ def estimate_from_silhouettes(
             return None
         return float(np.median(vals))
 
-    for rank, i in enumerate(valid):
-        theta = 2.0 * np.pi * i / n_total  # azimuth by position in the sequence
+    for rank in range(n_valid):
+        # Resampled ranks are uniform by construction; otherwise the azimuth
+        # follows the position in the sequence (gaps kept on dropped views).
+        i = rank if resampled else valid[rank]
+        theta = 2.0 * np.pi * rank / n_valid if resampled else 2.0 * np.pi * i / n_total
         right = np.array([-np.sin(theta), 0.0, np.cos(theta)])
         for slot, r in enumerate(rows):
             for side in (0, 1):
@@ -388,7 +485,10 @@ def estimate_from_silhouettes(
                 y = (horizon - r) * s
                 p = du * right + np.array([0.0, y, 0.0])
                 n = np.sign(du) * right if abs(du) > 1e-12 else np.array([0.0, 1.0, 0.0])
-                key = (round(float(p[0]), 9), round(float(p[1]), 9), round(float(p[2]), 9))
+                # 1 mm merge quantum: interpolated opposite-view pairs land
+                # ~0.1 mm apart and must weld; legit features (4 mm wall,
+                # 5 mm body spacing) survive it.
+                key = (round(float(p[0]), 3), round(float(p[1]), 3), round(float(p[2]), 3))
                 existing = by_position.get(key)
                 if existing is None:
                     by_position[key] = len(verts)
@@ -460,7 +560,7 @@ def estimate_from_silhouettes(
         for rank in range(n_valid)
         if (o := grid.get((rank, 0, 0))) is not None
     ]
-    r_in = max(float(np.median(rim_rr)) - wall_m, 0.005) if rim_rr else 0.03
+    r_in = max(float(np.percentile(rim_rr, 75)) - wall_m, 0.005) if rim_rr else 0.03
     inner_top: list[int | None] = []
     inner_bot: list[int | None] = []
     for rank in range(n_valid):
@@ -473,7 +573,7 @@ def estimate_from_silhouettes(
         if float(np.hypot(px, pz)) > 1e-9:
             az = float(np.arctan2(pz, px))
         else:  # tangent point on the axis: fall back to the view azimuth
-            theta = 2.0 * np.pi * valid[rank] / n_total
+            theta = 2.0 * np.pi * valid[rank % len(valid)] / n_total
             az = float(np.arctan2(-np.cos(theta), np.sin(theta)))
         ix, iz = r_in * float(np.cos(az)), r_in * float(np.sin(az))
         inner_top.append(len(verts))
@@ -500,7 +600,8 @@ def estimate_from_silhouettes(
         faces.append([t0, b1, b0])
         faces.append([floor_idx, b0, b1])  # cavity floor faces up
 
-    used_frames = [frame_indices[i] for i in valid]
+    used_view_idx = valid[: n_valid // 2] if resampled else valid
+    used_frames = [frame_indices[i] for i in used_view_idx]
     estimate = GeometryEstimate(
         source="silhouette_fallback",
         vertices=verts,
@@ -512,8 +613,9 @@ def estimate_from_silhouettes(
         estimated_height_m=height_m,
         base_color=dominant_color(frames),
         notes=(
-            f"Silhouette fallback: uniform 360° orbit, {n_valid}/{n_total} valid "
-            f"views, {n_scan} scanlines, common-band scale + rescale to {height_m} m."
+            f"Silhouette fallback: uniform 360° orbit, {len(valid)}/{n_total} valid "
+            f"views, {n_scan} scanlines, common-band scale + rescale to {height_m} m"
+            + (f", single-turn window (period {period:.2f} kf)." if resampled else ".")
         ),
     )
     _rescale_to_height(estimate, height_m)
