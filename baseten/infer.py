@@ -19,7 +19,7 @@ Env (remote path):
   BASETEN_MODEL_NAME (default muse-spark-open-1026)
   BASETEN_MAX_IMAGES (default 8: provider cap; views are evenly subsampled)
   BASETEN_HINT       (optional object description for unseen parts)
-  BASETEN_MAX_TOKENS (default 8000: remote completion budget)
+  BASETEN_MAX_TOKENS (default 16000: reasoning ~9-11k + JSON answer)
   BASETEN_TEMPERATURE (default 0.0: deterministic structured output)
 """
 
@@ -51,7 +51,8 @@ log = logging.getLogger("voxel-sam-ar.baseten")
 DEFAULT_BASE_URL = "https://inference.baseten.co/v1"
 DEFAULT_MODEL_NAME = "muse-spark-open-1026"
 DEFAULT_MAX_IMAGES = 8
-DEFAULT_MAX_TOKENS = 8000
+# Reasoning alone takes ~9-11k tokens; the JSON answer needs ~2k more.
+DEFAULT_MAX_TOKENS = 16000
 DEFAULT_TEMPERATURE = 0.0
 DEFAULT_HEIGHT_M = 0.20
 MASK_THRESHOLD = 24  # min RGB sum to count as object pixel
