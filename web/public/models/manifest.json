@@ -3,23 +3,23 @@
   "cycles": [
     {
       "cycle": 0,
-      "duration_s": 1.0233592999866232,
+      "duration_s": 1.042195099988021,
       "exit_code": 0,
       "kind": "baseline",
       "report": {
         "errors": [],
         "ok": true,
         "stats": {
-          "area": 0.02878350960889095,
+          "area": 0.026675086677966794,
           "bbox_max": [
             0.04294573643410853,
             0.04000000000000001,
-            0.057674418604651174
+            0.04697674418604652
           ],
           "bbox_min": [
             -0.04248062015503876,
             -0.04000000000000001,
-            -0.054810674794077356
+            -0.04605375403070737
           ],
           "boundary_edges": 0,
           "degenerate_faces": 0,
@@ -27,12 +27,12 @@
           "faces": 1008,
           "input": {
             "faces_in": 1008,
-            "vertices": 981
+            "vertices": 992
           },
           "method": "faces+repair",
           "nonmanifold_edges": 0,
           "vertices": 506,
-          "volume": 0.0003323963645881028,
+          "volume": 0.0003274139879226935,
           "watertight": true,
           "winding_consistent": true
         }
@@ -41,7 +41,7 @@
     }
   ],
   "model": null,
-  "run_id": "run_d411eb47f33d",
+  "run_id": "run_44da1f9104b3",
   "status": "success",
   "usdz": {
     "converter": "usda+zip",

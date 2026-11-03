@@ -336,10 +336,10 @@ def estimate_from_silhouettes(
     grid: dict[tuple[int, int, int], int] = {}  # (rank_valid, slot, side) -> idx
     by_position: dict[tuple[float, float, float], int] = {}
 
+    rows = np.linspace(y0c, y1c, n_scan).round().astype(int)
+    # Phase 1: collect silhouette runs per (view, scanline).
+    runs: dict[tuple[int, int], tuple[float, float]] = {}
     for rank, i in enumerate(valid):
-        theta = 2.0 * np.pi * i / n_total  # azimuth by position in the sequence
-        right = np.array([-np.sin(theta), 0.0, np.cos(theta)])
-        rows = np.linspace(y0c, y1c, n_scan).round().astype(int)
         for slot, r in enumerate(rows):
             run = _longest_run(masks[i][r])
             if run is None:
@@ -350,9 +350,32 @@ def estimate_from_silhouettes(
                 )
                 if run is None:
                     continue
-            for side, u in enumerate(run):
+            runs[(rank, slot)] = (float(run[0]), float(run[1]))
+
+    # Phase 2: circular median of edge offsets across neighboring views.
+    # Kills isolated mask spikes; real features (handle) span many views
+    # and survive.
+    def edge_u(rank: int, slot: int, side: int) -> float | None:
+        vals = []
+        for rr in ((rank - 1) % n_valid, rank, (rank + 1) % n_valid):
+            run = runs.get((rr, slot))
+            if run is not None:
+                vals.append(run[side])
+        if not vals:
+            return None
+        return float(np.median(vals))
+
+    for rank, i in enumerate(valid):
+        theta = 2.0 * np.pi * i / n_total  # azimuth by position in the sequence
+        right = np.array([-np.sin(theta), 0.0, np.cos(theta)])
+        for slot, r in enumerate(rows):
+            for side in (0, 1):
+                u = edge_u(rank, slot, side)
+                if u is None:
+                    continue
                 du = (u - cx_img) * s
-                y = (r - horizon) * s
+                # Image row 0 is the TOP: flip so the rim (+Y) matches.
+                y = (horizon - r) * s
                 p = du * right + np.array([0.0, y, 0.0])
                 n = np.sign(du) * right if abs(du) > 1e-12 else np.array([0.0, 1.0, 0.0])
                 key = (round(float(p[0]), 9), round(float(p[1]), 9), round(float(p[2]), 9))
@@ -408,7 +431,8 @@ def estimate_from_silhouettes(
     norms += [[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]]
     for rank in range(n_valid):
         rn = (rank + 1) % n_valid
-        for slot, apex, flip in ((n_scan - 1, top_idx, False), (0, bot_idx, True)):
+        # Slot 0 = image-top row = +Y rim after the Y flip; last slot = base.
+        for slot, apex, flip in ((0, top_idx, False), (n_scan - 1, bot_idx, True)):
             for side in (0,):
                 a = grid.get((rank, slot, side))
                 b = grid.get((rn, slot, side))

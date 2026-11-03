@@ -339,7 +339,13 @@ def _valid_rgb(value: Any) -> list[float] | None:
     if len(rgb) != 3 or any(not 0.0 <= c <= 1.0 for c in rgb):
         return None
     # Display compensation: bright AR viewers wash the measured albedo out.
-    return [c * DISPLAY_GAIN for c in rgb]
+    # glTF/USDA base color is LINEAR; measured sRGB must be converted or the
+    # renderer double-brightens it (red mug displayed pink).
+    out = []
+    for c in rgb:
+        c = c * DISPLAY_GAIN
+        out.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
+    return out
 
 
 def input_coverage(ref_points: Any, mesh_vertices: Any) -> float:

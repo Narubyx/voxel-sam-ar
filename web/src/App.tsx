@@ -20,8 +20,11 @@ const MODAL_URL = ((import.meta.env.VITE_MODAL_URL as string | undefined) ?? DEF
   '',
 );
 const ARTIFACTS_URL = (import.meta.env.VITE_ARTIFACTS_URL as string | undefined) ?? './demo';
-const MODEL_GLB = (import.meta.env.VITE_MODEL_GLB as string | undefined) ?? './models/model.glb';
-const MODEL_USDZ = (import.meta.env.VITE_MODEL_USDZ as string | undefined) ?? './models/model.usdz';
+// Bump MODEL_CACHE_BUST on every model redeploy: phones + Scene Viewer
+// aggressively cache model.glb/usdz and would show a stale mesh.
+const MODEL_CACHE_BUST = 'v10';
+const MODEL_GLB = (import.meta.env.VITE_MODEL_GLB as string | undefined) ?? `./models/model.glb?${MODEL_CACHE_BUST}`;
+const MODEL_USDZ = (import.meta.env.VITE_MODEL_USDZ as string | undefined) ?? `./models/model.usdz?${MODEL_CACHE_BUST}`;
 
 function errText(err: unknown): string {
   if (err instanceof ApiError) return `HTTP ${err.status}: ${err.message}`;
