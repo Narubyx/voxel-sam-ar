@@ -34,8 +34,9 @@ fully reproducible from this repo:
    (`--max-tokens 32000`) → `geometry_neural_1turn.json` (44v/80f, conf 0.84).
 3. `agent.loop` with `muse-spark-1.3` (7 cycles: fidelity gate → dense attempt →
    converge) → `run_107a16347283` (42v/80f watertight).
-4. `scripts/densify_mesh.py` (midpoint ×2 + Taubin 6) → 642v/1280f display mesh,
-   Y-span re-enforced to 0.0762 m, GLB + USDZ.
+4. `scripts/densify_mesh.py` (midpoint ×2 + Taubin 6, `--hollow-top`,
+   `--handle-hole`) → 750v/1500f display mesh with cup cavity + drilled C-handle
+   tunnel, Y-span re-enforced to 0.0762 m, GLB + USDZ.
 
 The `silhouette_fallback` in `baseten/infer.py` is the deterministic backup when
 the remote call fails; the demo model above is 100% Meta-models generated.
