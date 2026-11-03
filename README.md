@@ -35,7 +35,8 @@ fully reproducible from this repo:
 3. `agent.loop` with `muse-spark-1.3` (7 cycles: fidelity gate → dense attempt →
    converge) → `run_107a16347283` (42v/80f watertight).
 4. `scripts/densify_mesh.py` (midpoint ×2 + Taubin 6, `--hollow-top`,
-   `--handle-hole`) → 750v/1500f display mesh with cup cavity + drilled C-handle
+   `--handle-hole`) → 757v/1514f display mesh with conical cup bore
+   (ray-measured frustum hugging the tapered wall, euler 0) + drilled C-handle
    tunnel, Y-span re-enforced to 0.0762 m, GLB + USDZ.
 
 The `silhouette_fallback` in `baseten/infer.py` is the deterministic backup when

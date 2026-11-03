@@ -24,8 +24,9 @@ from agent.mesh_tools import check, repair, save_glb, to_usdz
 
 def _ordered_boundary_loop(mesh):
     """Single boundary cycle as an ordered vertex list. Raises if not one."""
-    import numpy as np
     from collections import Counter
+
+    import numpy as np
 
     edges = [tuple(sorted(e)) for e in np.asarray(mesh.edges_sorted)]
     bnd = [e for e, n in Counter(edges).items() if n == 1]
@@ -49,7 +50,14 @@ def _ordered_boundary_loop(mesh):
 
 
 def graft_hollow_top(mesh, wall_m=0.004, floor_lift_m=0.012):
-    """Swaps the flat top cap for a cup profile stitched to the rim loop."""
+    """Cuts the cup bore with a manifold boolean (wall + flat floor).
+
+    Replaces the old stitched pocket: deleting cap faces and evacuating the
+    cylinder left ragged, fill-resistant boundaries and nested the VLM's crude
+    inner cup inside the graft ("two intersected cups"). A single difference
+    with a Y-axis cylinder removes the cap, the solid core, and any VLM inner
+    cup in one clean cut; the surviving rim annulus is the lip.
+    """
     import numpy as np
     import trimesh
 
@@ -61,40 +69,82 @@ def graft_hollow_top(mesh, wall_m=0.004, floor_lift_m=0.012):
         raise ValueError("no flat top cap found to replace.")
     open_mesh = trimesh.Trimesh(v, f[~cap], process=False)
     loop = _ordered_boundary_loop(open_mesh)
+    y_floor = y_base + floor_lift_m
+    print(json.dumps({"graft": {"y_top": round(float(y_top), 5),
+                                "y_base": round(float(y_base), 5),
+                                "y_floor": round(float(y_floor), 5),
+                                "loop": len(loop), "cap_faces": int(cap.sum())}}))
 
     ov = np.asarray(open_mesh.vertices)
-    ring = ov[loop]
-    rr = np.linalg.norm(ring[:, [0, 2]], axis=1, keepdims=True)
-    rr = np.maximum(rr, 1e-9)
-    inward = ring[:, [0, 2]] / rr
-    inner_xz = ring[:, [0, 2]] - wall_m * inward
-    y_floor = y_base + floor_lift_m
-    n = len(loop)
-    base = len(ov)
-    # Wall in 4 stacked bands (one 64 mm-tall quad ring would be needles).
-    levels = 5
-    ys = np.linspace(y_top, y_floor, levels)
-    wall_rings = []
-    for lv in range(levels):
-        wall_rings.append(np.column_stack([inner_xz, np.full(n, ys[lv])]))
-    new_v = np.vstack([ov] + wall_rings + [[[0.0, y_floor, 0.0]]])
-    floor_idx = base + levels * n
-    faces = [list(tri) for tri in np.asarray(open_mesh.faces)]
-    for k in range(n):
-        k2 = (k + 1) % n
-        o0, o1 = loop[k], loop[k2]
-        t0, t1 = base + k, base + k2
-        faces.append([t0, o0, o1])  # lip, faces up
-        faces.append([t0, o1, t1])
-        for lv in range(levels - 1):
-            a0, a1 = base + lv * n + k, base + lv * n + k2
-            b0, b1 = base + (lv + 1) * n + k, base + (lv + 1) * n + k2
-            faces.append([a0, a1, b1])  # inner wall, faces inward
-            faces.append([a0, b1, b0])
-        f0 = base + (levels - 1) * n + k
-        f1 = base + (levels - 1) * n + k2
-        faces.append([floor_idx, f0, f1])  # floor, faces up
-    return trimesh.Trimesh(new_v, faces, process=True)
+    # The body is a tapered cone (wide rim, narrow base): the bore must be a
+    # frustum hugging the wall, not a cylinder (a cylinder punches through
+    # the cone = side breach = euler -2). Measure the body profile with rays
+    # (away from the handle), center the axis on the body, keep wall_m inside.
+    def _body_r(y, dx, dz):
+        o = np.array([[cx, y, cz]])
+        n = float(np.hypot(dx, dz))
+        d = np.array([[dx / n, 0.0, dz / n]])
+        locs, _, _ = mesh.ray.intersects_location(o, d, multiple_hits=True)
+        if not len(locs):
+            raise ValueError(f"body profile ray missed at y={y}.")
+        return float(np.hypot(locs[:, 0], locs[:, 2]).min())
+
+    _of = np.asarray(open_mesh.faces)
+    _oc = ov[_of].mean(axis=1)
+    band = ((np.abs(_oc[:, 2]) < 0.015) & (np.abs(_oc[:, 1]) < 0.020)
+            & (_oc[:, 0] < 0.0335))
+    if not band.any():
+        raise ValueError("no body band found for bore centering.")
+    cx = float(_oc[band][:, 0].mean())
+    cz = float(_oc[band][:, 2].mean())
+    top = y_top + 0.005
+    r_top = _body_r(y_top - 0.008, -1, 0) - wall_m + 0.008 * 0.25
+    r_bot = min(_body_r(y_floor + 0.002, -1, 0),
+                _body_r(y_floor + 0.002, 0, 1),
+                _body_r(y_floor + 0.002, 0, -1)) - wall_m
+    if not r_bot > 0.012:
+        raise ValueError(f"bore bottom too narrow ({r_bot:.4f}).")
+    n_sec = 24
+    th = np.linspace(0, 2 * np.pi, n_sec, endpoint=False)
+    ring_top = np.column_stack([cx + r_top * np.cos(th),
+                                np.full(n_sec, top),
+                                cz + r_top * np.sin(th)])
+    ring_bot = np.column_stack([cx + r_bot * np.cos(th),
+                                np.full(n_sec, y_floor),
+                                cz + r_bot * np.sin(th)])
+    fc = np.array([[cx, y_floor, cz]])
+    tc = np.array([[cx, top, cz]])
+    fv = np.vstack([ring_top, ring_bot, fc, tc])
+    ff = []
+    for k in range(n_sec):
+        k2 = (k + 1) % n_sec
+        ff.append([k, n_sec + k, n_sec + k2])
+        ff.append([k, n_sec + k2, k2])
+        ff.append([2 * n_sec, n_sec + k2, n_sec + k])
+        ff.append([2 * n_sec + 1, k, k2])
+    cyl = trimesh.Trimesh(fv, ff, process=True)
+    if not cyl.is_watertight or not cyl.is_winding_consistent:
+        raise ValueError("frustum tool is not a clean volume.")
+    if cyl.volume < 0:
+        cyl.invert()
+    print(json.dumps({"bore": {"r_top": round(r_top, 5),
+                               "r_bot": round(r_bot, 5),
+                               "cx": round(cx, 5), "cz": round(cz, 5)}}))
+    try:
+        out = trimesh.boolean.difference([mesh, cyl], engine="manifold")
+    except Exception as exc:
+        raise RuntimeError(f"bore boolean failed: {exc}") from exc
+    if out is None or len(getattr(out, "faces", [])) == 0:
+        raise RuntimeError("bore boolean produced an empty mesh.")
+    # Drop zero-area slivers the boolean leaves at the bore wall seam, then
+    # heal their zero-area slits with an exact merge (rounding is sub-GLB-
+    # quantization, so lossless) and patch any residual micro-gap.
+    out.update_faces(np.asarray(out.area_faces) > 1e-8)
+    out.vertices = np.round(np.asarray(out.vertices), 9)
+    out.merge_vertices()
+    out.remove_unreferenced_vertices()
+    trimesh.repair.fill_holes(out)
+    return out
 
 
 def drill_handle_hole(mesh, center=(0.040, 0.0, 0.0), radius_m=0.007):
@@ -159,14 +209,17 @@ def main(argv: list[str] | None = None) -> int:
     # Graft AFTER repair: merging/filling post-graft collapses near-coincident
     # handle verts and re-patches them as needles. The graft preserves
     # watertightness by construction (stitched rings).
-    if args.hollow_top:
-        out_mesh = graft_hollow_top(
-            out_mesh, wall_m=args.wall_mm / 1000.0,
-            floor_lift_m=args.floor_lift_mm / 1000.0)
+    # Both holes are manifold booleans on closed input: tunnel (Z cylinder
+    # through the handle, disjoint from the bore) then bore (Y cylinder from
+    # above the rim down to the floor level). Each output stays closed.
     if args.handle_hole:
         out_mesh = drill_handle_hole(
             out_mesh, center=tuple(args.hole_center),
             radius_m=args.hole_radius_mm / 1000.0)
+    if args.hollow_top:
+        out_mesh = graft_hollow_top(
+            out_mesh, wall_m=args.wall_mm / 1000.0,
+            floor_lift_m=args.floor_lift_mm / 1000.0)
 
     report = check(out_mesh)
     stats = {"verts": len(out_mesh.vertices), "faces": len(out_mesh.faces)}
