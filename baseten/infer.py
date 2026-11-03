@@ -20,6 +20,7 @@ Env (remote path):
   BASETEN_MAX_IMAGES (default 8: provider cap; views are evenly subsampled)
   BASETEN_HINT       (optional object description for unseen parts)
   BASETEN_MAX_TOKENS (default 8000: remote completion budget)
+  BASETEN_TEMPERATURE (default 0.0: deterministic structured output)
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ DEFAULT_BASE_URL = "https://inference.baseten.co/v1"
 DEFAULT_MODEL_NAME = "muse-spark-open-1026"
 DEFAULT_MAX_IMAGES = 8
 DEFAULT_MAX_TOKENS = 8000
+DEFAULT_TEMPERATURE = 0.0
 DEFAULT_HEIGHT_M = 0.20
 MASK_THRESHOLD = 24  # min RGB sum to count as object pixel
 TRANSPORT_RETRIES = 3
@@ -138,6 +140,13 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
 def subsample_views(
     frames: list[np.ndarray], frame_indices: list[int], max_images: int
 ) -> tuple[list[np.ndarray], list[int]]:
@@ -161,6 +170,7 @@ def estimate_remote(
     hint: str | None = None,
     target_height_m: float | None = None,
     max_tokens: int | None = None,
+    temperature: float | None = None,
 ) -> GeometryEstimate:
     try:
         import instructor
@@ -175,6 +185,8 @@ def estimate_remote(
         max_images = _env_int("BASETEN_MAX_IMAGES", DEFAULT_MAX_IMAGES)
     if max_tokens is None:
         max_tokens = _env_int("BASETEN_MAX_TOKENS", DEFAULT_MAX_TOKENS)
+    if temperature is None:
+        temperature = _env_float("BASETEN_TEMPERATURE", DEFAULT_TEMPERATURE)
     frames, frame_indices = subsample_views(frames, frame_indices, max_images)
     base_url = os.environ.get("BASETEN_BASE_URL", DEFAULT_BASE_URL).strip()
     model = os.environ.get("BASETEN_MODEL_NAME", DEFAULT_MODEL_NAME).strip()
@@ -217,6 +229,7 @@ def estimate_remote(
                 response_model=GeometryEstimate,
                 max_retries=INSTRUCTOR_RETRIES,
                 max_tokens=max_tokens,
+                temperature=temperature,
             )
             estimate.source = "muse-spark-open-1026"
             estimate.base_color = dominant_color(frames)
@@ -443,6 +456,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-tokens", type=int, default=None,
                    help=f"remote completion budget (default: BASETEN_MAX_TOKENS "
                    f"or {DEFAULT_MAX_TOKENS})")
+    p.add_argument("--temperature", type=float, default=None,
+                   help="remote sampling temperature, 0 = deterministic "
+                   f"(default: BASETEN_TEMPERATURE or {DEFAULT_TEMPERATURE})")
     return p
 
 
@@ -460,7 +476,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             estimate = estimate_remote(frames, indices, args.max_side, args.jpeg_q,
                                        args.max_images, hint, args.height_m,
-                                       args.max_tokens)
+                                       args.max_tokens, args.temperature)
             log.info("Remote geometry OK: %s", estimate.summary())
         except BasetenConfigError as exc:
             log.warning("Remote not configured (%s); using local fallback.", exc)
