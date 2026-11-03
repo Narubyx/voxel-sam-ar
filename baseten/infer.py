@@ -71,6 +71,8 @@ Return EXCLUSIVELY a JSON with this shape (no markdown, no extra text):
 Rules: Y-up frame; |coord| <= 50; vertices spread over the WHOLE surface visible
 in the views (not just one face); `normals` with the same length as `vertices`;
 valid indices; `estimated_height_m` consistent with an everyday object.
+Prefer 200-500 vertices (denser is better, up to 1024) and include `faces`
+triangles whenever confident about connectivity.
 The client sets the "source" field; do not include it.
 """
 
@@ -156,6 +158,7 @@ def estimate_remote(
     jpeg_q: int = 72,
     max_images: int | None = None,
     hint: str | None = None,
+    target_height_m: float | None = None,
 ) -> GeometryEstimate:
     try:
         import instructor
@@ -210,6 +213,9 @@ def estimate_remote(
             )
             estimate.source = "muse-spark-open-1026"
             estimate.base_color = dominant_color(frames)
+            if target_height_m is not None:
+                _rescale_to_height(estimate, target_height_m)
+                estimate = GeometryEstimate.model_validate(estimate.model_dump())
             return estimate
         except Exception as exc:
             last_err = exc
@@ -379,6 +385,19 @@ def estimate_from_silhouettes(
     )
 
 
+def _rescale_to_height(estimate: GeometryEstimate, target: float) -> None:
+    """Uniformly rescales vertices so the Y span equals the measured height."""
+    if not 0.001 < target < 50.0:
+        raise BasetenConfigError(f"target height out of range: {target}.")
+    ys = [v[1] for v in estimate.vertices]
+    span = max(ys) - min(ys)
+    if not span > 0:
+        raise BasetenConfigError("Cannot rescale: zero height span.")
+    s = target / span
+    estimate.vertices = [[c * s for c in row] for row in estimate.vertices]
+    estimate.estimated_height_m = target
+
+
 def dominant_color(frames: list[np.ndarray]) -> list[float] | None:
     """Median RGB of object pixels (above the mask threshold) over all views."""
     px = np.concatenate([a.reshape(-1, 3) for a in frames], axis=0)
@@ -399,7 +418,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--keyframes-dir", required=True, type=Path)
     p.add_argument("--meta", type=Path, default=None, help="meta.json with real indices")
     p.add_argument("--out", type=Path, default=None, help="default: <keyframes-dir>/geometry.json")
-    p.add_argument("--height-m", type=float, default=DEFAULT_HEIGHT_M)
+    p.add_argument("--height-m", type=float, default=None,
+                   help="measured object height in meters: construction scale for "
+                   f"the local fallback (default {DEFAULT_HEIGHT_M}), rescales the "
+                   "remote output to this height when given")
     p.add_argument("--no-remote", action="store_true", help="local fallback only")
     p.add_argument("--max-side", type=int, default=768)
     p.add_argument("--jpeg-q", type=int, default=72)
@@ -424,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_remote:
         try:
             estimate = estimate_remote(frames, indices, args.max_side, args.jpeg_q,
-                                       args.max_images, hint)
+                                       args.max_images, hint, args.height_m)
             log.info("Remote geometry OK: %s", estimate.summary())
         except BasetenConfigError as exc:
             log.warning("Remote not configured (%s); using local fallback.", exc)
@@ -433,7 +455,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if estimate is None:
         try:
-            estimate = estimate_from_silhouettes(frames, indices, args.height_m)
+            estimate = estimate_from_silhouettes(
+                frames, indices, args.height_m or DEFAULT_HEIGHT_M)
             log.info("Local geometry OK: %s", estimate.summary())
         except GeometryValidationError as exc:
             log.error("Local fallback failed: %s", exc)

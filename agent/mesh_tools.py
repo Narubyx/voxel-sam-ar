@@ -25,9 +25,9 @@ CANDIDATE_CONTRACT = """CANDIDATE SCRIPT CONTRACT (mandatory):
 - Pass meta.get("base_color") to save_glb so AR shows the object painted.
 - Forbidden: network, threads, absolute paths outside the working directory."""
 
-# Glossy-dielectric PBR defaults (ceramic/plastic): specular highlights react
-# to the viewer environment instead of a flat matte look.
-DEFAULT_ROUGHNESS = 0.35
+# Glazed-ceramic PBR defaults: tight specular highlights that react to the
+# viewer environment, instead of a broad sheen that washes the base color out.
+DEFAULT_ROUGHNESS = 0.2
 DEFAULT_METALLIC = 0.0
 
 
