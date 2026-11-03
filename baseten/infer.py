@@ -309,6 +309,14 @@ def estimate_from_silhouettes(
     _h, w = frames[0].shape[:2]
     cx_img = w / 2.0
     masks = [(arr.sum(axis=2) > MASK_THRESHOLD) for arr in frames]
+    # Horizontal closing: merges the (detached) handle blob into the body
+    # silhouette so it sweeps as a solid bulge instead of isolated fins.
+    # Measured C-gap p90 ~138px on mug_v3; kernel 250 only ever bridges
+    # handle gaps (the sole detached blobs), never distorts the body.
+    from scipy.ndimage import binary_closing
+
+    struct = np.ones((1, 250), dtype=bool)
+    masks = [binary_closing(m, structure=struct) for m in masks]
     bboxes: list[tuple[int, int] | None] = []
     for m in masks:
         rows = np.flatnonzero(m.any(axis=1))
@@ -329,7 +337,9 @@ def estimate_from_silhouettes(
     horizon = (y0c + y1c) / 2.0
     n_total = len(frames)
     n_valid = len(valid)
-    n_scan = max(2, min(24, 1022 // max(1, 2 * n_valid)))
+    # Vertex budget: schema caps at 1024; reserve ~100 for the cup interior
+    # (2 rings + floor apex) and caps so the grid never overflows it.
+    n_scan = max(2, min(24, 920 // max(1, 2 * n_valid)))
 
     verts: list[list[float]] = []
     norms: list[list[float]] = []
@@ -424,21 +434,71 @@ def estimate_from_silhouettes(
                 faces.append([a, b, c])
                 faces.append([a, c, d])
 
-    # Top/bottom fan caps over the end rings.
+    # Bottom fan cap + cup-profile top (rim lip + inner wall + floor) so the
+    # mug reads hollow from above. WALL/FLOOR are assumptions: 4 mm ceramic
+    # wall, interior floor 12 mm above the base.
     ys = [v[1] for v in verts]
-    top_idx, bot_idx = len(verts), len(verts) + 1
-    verts += [[0.0, max(ys), 0.0], [0.0, min(ys), 0.0]]
-    norms += [[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]]
+    y_top, y_base = max(ys), min(ys)
+    bot_idx = len(verts)
+    verts.append([0.0, y_base, 0.0])
+    norms.append([0.0, -1.0, 0.0])
     for rank in range(n_valid):
         rn = (rank + 1) % n_valid
-        # Slot 0 = image-top row = +Y rim after the Y flip; last slot = base.
-        for slot, apex, flip in ((0, top_idx, False), (n_scan - 1, bot_idx, True)):
-            for side in (0,):
-                a = grid.get((rank, slot, side))
-                b = grid.get((rn, slot, side))
-                if a is None or b is None:
-                    continue
-                faces.append([apex, b, a] if flip else [apex, a, b])
+        # Slot n_scan-1 = image-bottom row = base after the Y flip.
+        a = grid.get((rank, n_scan - 1, 0))
+        b = grid.get((rn, n_scan - 1, 0))
+        if a is None or b is None:
+            continue
+        faces.append([bot_idx, b, a])
+    # Cup interior stitched to the slot-0 (rim) ring.
+    wall_m, floor_lift_m = 0.004, 0.012
+    y_floor = y_base + floor_lift_m
+    # Regular circle: raw rim verts include near-axis tangent points that
+    # would collapse the inner wall; keep each rank's azimuth, unify radius.
+    rim_rr = [
+        float(np.hypot(*verts[o][::2]))
+        for rank in range(n_valid)
+        if (o := grid.get((rank, 0, 0))) is not None
+    ]
+    r_in = max(float(np.median(rim_rr)) - wall_m, 0.005) if rim_rr else 0.03
+    inner_top: list[int | None] = []
+    inner_bot: list[int | None] = []
+    for rank in range(n_valid):
+        o = grid.get((rank, 0, 0))
+        if o is None:
+            inner_top.append(None)
+            inner_bot.append(None)
+            continue
+        px, _, pz = verts[o]
+        if float(np.hypot(px, pz)) > 1e-9:
+            az = float(np.arctan2(pz, px))
+        else:  # tangent point on the axis: fall back to the view azimuth
+            theta = 2.0 * np.pi * valid[rank] / n_total
+            az = float(np.arctan2(-np.cos(theta), np.sin(theta)))
+        ix, iz = r_in * float(np.cos(az)), r_in * float(np.sin(az))
+        inner_top.append(len(verts))
+        verts.append([ix, y_top, iz])
+        norms.append([0.0, 1.0, 0.0])
+        inner_bot.append(len(verts))
+        verts.append([ix, y_floor, iz])
+        norms.append([0.0, 1.0, 0.0])
+    floor_idx = len(verts)
+    verts.append([0.0, y_floor, 0.0])
+    norms.append([0.0, 1.0, 0.0])
+    for rank in range(n_valid):
+        rn = (rank + 1) % n_valid
+        o0 = grid.get((rank, 0, 0))
+        o1 = grid.get((rn, 0, 0))
+        t0, t1 = inner_top[rank], inner_top[rn]
+        b0, b1 = inner_bot[rank], inner_bot[rn]
+        if None in (o0, o1, t0, t1, b0, b1):
+            continue
+        assert None not in (o0, o1, t0, t1, b0, b1)
+        faces.append([t0, o0, o1])  # rim lip (same sense as the old top fan)
+        faces.append([t0, o1, t1])
+        faces.append([t0, t1, b1])  # inner wall (same pattern as bridges)
+        faces.append([t0, b1, b0])
+        faces.append([floor_idx, b0, b1])  # cavity floor faces up
 
     used_frames = [frame_indices[i] for i in valid]
     estimate = GeometryEstimate(
