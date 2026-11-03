@@ -23,6 +23,23 @@ an autonomous agent (feedback loop, max 10 cycles) and publish a WebAR-ready
 
 Detailed file plan: [docs/PLAN.md](docs/PLAN.md).
 
+## Demo model (hackathon submission)
+
+Red mug clone at true scale (76.2 mm), live in `web/public/models/`. Provenance,
+fully reproducible from this repo:
+
+1. `video/20261102_175914.mp4` (turntable, ~2.3 turns) → Modal `/segment` (SAM
+   `sam_vith_optflow`) → 24 keyframes in `e2e_out/e2e_mug_v3/kf/`.
+2. Single-turn window (11 kf) → Baseten `meta-models/muse-spark-open-1026`
+   (`--max-tokens 32000`) → `geometry_neural_1turn.json` (44v/80f, conf 0.84).
+3. `agent.loop` with `muse-spark-1.3` (7 cycles: fidelity gate → dense attempt →
+   converge) → `run_107a16347283` (42v/80f watertight).
+4. `scripts/densify_mesh.py` (midpoint ×2 + Taubin 6) → 642v/1280f display mesh,
+   Y-span re-enforced to 0.0762 m, GLB + USDZ.
+
+The `silhouette_fallback` in `baseten/infer.py` is the deterministic backup when
+the remote call fails; the demo model above is 100% Meta-models generated.
+
 ## Quickstart — Step 1 (Modal + SAM)
 
 Requirements: Python 3.11+, Modal account (`pip install modal && modal setup`).

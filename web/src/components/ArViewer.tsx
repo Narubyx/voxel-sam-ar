@@ -90,6 +90,10 @@ export default function ArViewer({ glb, usdz, title }: Props) {
           </button>
         </model-viewer>
         <p className="muted">{arStatus}</p>
+        <p className="muted small">
+          Tip: the model is true-scale (76.2 mm tall) — if it spawns far away it looks small; pinch to
+          rescale and place it next to the real object.
+        </p>
       </div>
       <div className="qr-card">
         {pageUrl ? <QRCodeSVG value={pageUrl} size={200} level="M" /> : <p>Loading QR…</p>}

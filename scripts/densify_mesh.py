@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--height-m", type=float, required=True)
     p.add_argument("--base-color", type=float, nargs=3, default=None)
     p.add_argument("--subdiv", type=int, default=2)
-    p.add_argument("--smooth-iters", type=int, default=4)
+    p.add_argument("--smooth-iters", type=int, default=6)
     args = p.parse_args(argv)
 
     import numpy as np
