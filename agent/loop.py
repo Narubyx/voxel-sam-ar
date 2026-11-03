@@ -398,6 +398,7 @@ def run_loop(
         return manifest, 1
 
     history: list[dict[str, Any]] = []
+    ref_vertices = _load_ref_vertices(run_dir)
     model_client: ModelClient | None = None
     if max_cycles > 1:
         try:
@@ -438,6 +439,10 @@ def run_loop(
                 (run_dir / f"{tag}.report.json").write_text(
                     json.dumps(report_dict, indent=2), encoding="utf-8"
                 )
+            report_dict = _apply_fidelity_gate(backend, ref_vertices, report_dict)
+            (run_dir / f"{tag}.report.json").write_text(
+                json.dumps(report_dict, indent=2), encoding="utf-8"
+            )
             rec = CycleRecord(cycle, kind, res.exit_code, res.duration_s,
                               report_dict, res.stderr[-STDERR_TAIL:])
             history.append(asdict(rec))
@@ -471,6 +476,64 @@ def run_loop(
 
 def _write_manifest(run_dir: Path, manifest: RunManifest) -> None:
     (run_dir / "manifest.json").write_text(manifest.to_json(), encoding="utf-8")
+
+
+# Calibrated: good faces+repair scores ~0.020, a diverged egg ~0.052.
+FIDELITY_TOL = 0.035
+
+
+def _load_ref_vertices(run_dir: Path) -> list | None:
+    try:
+        geo = json.loads((run_dir / "geometry.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    verts = geo.get("vertices")
+    return verts if isinstance(verts, list) and len(verts) >= 3 else None
+
+
+def _apply_fidelity_gate(
+    backend: LocalBackend | ModalBackend,
+    ref_vertices: list | None,
+    report_dict: dict[str, Any],
+) -> dict[str, Any]:
+    """Rejects topologically-valid outputs that diverged from the input shape.
+
+    Never fails a cycle on missing host deps or malformed data: those skip
+    the gate with a warning, and the topology verdict stands.
+    """
+    if not report_dict.get("ok") or not ref_vertices:
+        return report_dict
+    try:
+        glb = backend.fetch("candidate.glb")
+    except BackendError:
+        return report_dict  # missing glb fails downstream anyway
+    sys.path.insert(0, str(AGENT_DIR))
+    try:
+        import io as _io
+
+        import trimesh
+        from mesh_tools import input_coverage
+
+        mesh = trimesh.load(_io.BytesIO(glb), file_type="glb", force="mesh")
+        dist = input_coverage(ref_vertices, mesh.vertices)
+    except Exception as exc:  # noqa: BLE001 - fidelity is best-effort
+        log.warning("Fidelity check skipped: %s", exc)
+        return report_dict
+    finally:
+        sys.path.remove(str(AGENT_DIR))
+    if dist > FIDELITY_TOL:
+        report_dict = dict(report_dict)
+        report_dict["ok"] = False
+        errors = list(report_dict.get("errors") or [])
+        errors.append(
+            f"low fidelity: input coverage {dist:.3f} > {FIDELITY_TOL} "
+            "(output diverged from input shape; stay close to the input "
+            "vertices while closing)"
+        )
+        report_dict["errors"] = errors
+    else:
+        log.info("fidelity ok: input coverage %.3f", dist)
+    return report_dict
 
 
 def _run_base_color(run_dir: Path) -> Any:

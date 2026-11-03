@@ -29,6 +29,7 @@ CANDIDATE_CONTRACT = """CANDIDATE SCRIPT CONTRACT (mandatory):
 # viewer environment, instead of a broad sheen that washes the base color out.
 DEFAULT_ROUGHNESS = 0.2
 DEFAULT_METALLIC = 0.0
+DISPLAY_GAIN = 0.85
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +338,29 @@ def _valid_rgb(value: Any) -> list[float] | None:
         return None
     if len(rgb) != 3 or any(not 0.0 <= c <= 1.0 for c in rgb):
         return None
-    return rgb
+    # Display compensation: bright AR viewers wash the measured albedo out.
+    return [c * DISPLAY_GAIN for c in rgb]
+
+
+def input_coverage(ref_points: Any, mesh_vertices: Any) -> float:
+    """Mean input-point distance to the mesh, normalized by input diagonal.
+
+    Catches outputs that closed topologically but diverged from the input
+    shape (e.g. an egg for a mug). Raises on malformed inputs.
+    """
+    import numpy as np
+    from scipy.spatial import cKDTree
+
+    ref = np.asarray(ref_points, dtype=np.float64)
+    verts = np.asarray(mesh_vertices, dtype=np.float64)
+    if ref.ndim != 2 or ref.shape[1] != 3 or ref.shape[0] < 3:
+        raise ValueError("input_coverage needs >= 3 reference points.")
+    if verts.ndim != 2 or verts.shape[1] != 3 or len(verts) == 0:
+        raise ValueError("input_coverage needs mesh vertices.")
+    diag = float(np.linalg.norm(ref.max(axis=0) - ref.min(axis=0)))
+    if not diag > 0:
+        raise ValueError("input_coverage needs a non-degenerate cloud.")
+    return float(cKDTree(verts).query(ref)[0].mean() / diag)
 
 
 def save_glb(

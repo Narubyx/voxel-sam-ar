@@ -317,10 +317,9 @@ def estimate_from_silhouettes(
     if not valid:
         raise GeometryValidationError("All masks are empty.")
 
-    heights = [bboxes[i][1] - bboxes[i][0] + 1 for i in valid]  # type: ignore[index]
-    horizon = float(np.median([(bboxes[i][0] + bboxes[i][1]) / 2 for i in valid]))  # type: ignore[index]
-    s = height_m / float(np.median(heights))  # meters per pixel
-
+    # Per-view normalization: each view's bbox IS the object (zoom-invariant,
+    # exact height span). A global median scale breaks when masks vary
+    # (stand included or not, camera drift) — it once overshot 27%.
     n_total = len(frames)
     n_valid = len(valid)
     n_scan = max(2, min(24, 1022 // max(1, 2 * n_valid)))
@@ -333,6 +332,9 @@ def estimate_from_silhouettes(
         theta = 2.0 * np.pi * i / n_total  # azimuth by position in the sequence
         right = np.array([-np.sin(theta), 0.0, np.cos(theta)])
         y0, y1 = bboxes[i]  # type: ignore[misc]
+        span = max(1, y1 - y0)
+        s_view = height_m / span
+        horizon_view = (y0 + y1) / 2.0
         rows = np.linspace(y0, y1, n_scan).round().astype(int)
         for slot, r in enumerate(rows):
             run = _longest_run(masks[i][r])
@@ -345,8 +347,8 @@ def estimate_from_silhouettes(
                 if run is None:
                     continue
             for side, u in enumerate(run):
-                du = (u - cx_img) * s
-                y = (r - horizon) * s
+                du = (u - cx_img) * s_view
+                y = (r - horizon_view) * s_view
                 p = du * right + np.array([0.0, y, 0.0])
                 n = np.sign(du) * right if abs(du) > 1e-12 else np.array([0.0, 1.0, 0.0])
                 grid[(rank, slot, side)] = len(verts)
@@ -405,7 +407,7 @@ def estimate_from_silhouettes(
         base_color=dominant_color(frames),
         notes=(
             f"Silhouette fallback: uniform 360° orbit, {n_valid}/{n_total} valid "
-            f"views, {n_scan} scanlines, scale {s:.5f} m/px from height {height_m} m."
+            f"views, {n_scan} scanlines, per-view scale to height {height_m} m."
         ),
     )
 
