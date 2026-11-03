@@ -19,6 +19,7 @@ Env (remote path):
   BASETEN_MODEL_NAME (default muse-spark-open-1026)
   BASETEN_MAX_IMAGES (default 8: provider cap; views are evenly subsampled)
   BASETEN_HINT       (optional object description for unseen parts)
+  BASETEN_MAX_TOKENS (default 8000: remote completion budget)
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ log = logging.getLogger("voxel-sam-ar.baseten")
 DEFAULT_BASE_URL = "https://inference.baseten.co/v1"
 DEFAULT_MODEL_NAME = "muse-spark-open-1026"
 DEFAULT_MAX_IMAGES = 8
+DEFAULT_MAX_TOKENS = 8000
 DEFAULT_HEIGHT_M = 0.20
 MASK_THRESHOLD = 24  # min RGB sum to count as object pixel
 TRANSPORT_RETRIES = 3
@@ -71,8 +73,9 @@ Return EXCLUSIVELY a JSON with this shape (no markdown, no extra text):
 Rules: Y-up frame; |coord| <= 50; vertices spread over the WHOLE surface visible
 in the views (not just one face); `normals` with the same length as `vertices`;
 valid indices; `estimated_height_m` consistent with an everyday object.
-Prefer 200-500 vertices (denser is better, up to 1024) and include `faces`
-triangles whenever confident about connectivity.
+Prefer 100-250 vertices spread over the WHOLE surface (denser is better)
+and include `faces` triangles whenever confident about connectivity.
+Round every float to 4 decimals to keep the JSON compact.
 The client sets the "source" field; do not include it.
 """
 
@@ -159,6 +162,7 @@ def estimate_remote(
     max_images: int | None = None,
     hint: str | None = None,
     target_height_m: float | None = None,
+    max_tokens: int | None = None,
 ) -> GeometryEstimate:
     try:
         import instructor
@@ -171,6 +175,8 @@ def estimate_remote(
         raise BasetenConfigError("BASETEN_API_KEY missing.")
     if max_images is None:
         max_images = _env_int("BASETEN_MAX_IMAGES", DEFAULT_MAX_IMAGES)
+    if max_tokens is None:
+        max_tokens = _env_int("BASETEN_MAX_TOKENS", DEFAULT_MAX_TOKENS)
     frames, frame_indices = subsample_views(frames, frame_indices, max_images)
     base_url = os.environ.get("BASETEN_BASE_URL", DEFAULT_BASE_URL).strip()
     model = os.environ.get("BASETEN_MODEL_NAME", DEFAULT_MODEL_NAME).strip()
@@ -210,6 +216,7 @@ def estimate_remote(
                 messages=messages,
                 response_model=GeometryEstimate,
                 max_retries=INSTRUCTOR_RETRIES,
+                max_tokens=max_tokens,
             )
             estimate.source = "muse-spark-open-1026"
             estimate.base_color = dominant_color(frames)
@@ -223,6 +230,9 @@ def estimate_remote(
             status = getattr(exc, "status_code", None)
             if status is not None and status != 429 and 400 <= status < 500:
                 break  # client error (bad model, too many images…): no retry
+            msg = str(exc).lower()
+            if "max_tokens" in msg or "length limit" in msg:
+                break  # output budget hit: retrying the same ask is pointless
             retryable = any(
                 k in name
                 for k in (
@@ -430,6 +440,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hint", type=str, default=None,
                    help="object description for unseen parts (remote only; "
                    "or BASETEN_HINT)")
+    p.add_argument("--max-tokens", type=int, default=None,
+                   help=f"remote completion budget (default: BASETEN_MAX_TOKENS "
+                   f"or {DEFAULT_MAX_TOKENS})")
     return p
 
 
@@ -446,7 +459,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_remote:
         try:
             estimate = estimate_remote(frames, indices, args.max_side, args.jpeg_q,
-                                       args.max_images, hint, args.height_m)
+                                       args.max_images, hint, args.height_m,
+                                       args.max_tokens)
             log.info("Remote geometry OK: %s", estimate.summary())
         except BasetenConfigError as exc:
             log.warning("Remote not configured (%s); using local fallback.", exc)
