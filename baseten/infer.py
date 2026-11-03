@@ -18,6 +18,7 @@ Env (remote path):
   BASETEN_BASE_URL   (default https://inference.baseten.co/v1)
   BASETEN_MODEL_NAME (default muse-spark-open-1026)
   BASETEN_MAX_IMAGES (default 8: provider cap; views are evenly subsampled)
+  BASETEN_HINT       (optional object description for unseen parts)
 """
 
 from __future__ import annotations
@@ -154,6 +155,7 @@ def estimate_remote(
     max_side: int = 768,
     jpeg_q: int = 72,
     max_images: int | None = None,
+    hint: str | None = None,
 ) -> GeometryEstimate:
     try:
         import instructor
@@ -174,16 +176,17 @@ def estimate_remote(
     raw = openai.OpenAI(base_url=base_url, api_key=api_key, timeout=300.0)
     client = instructor.from_openai(raw, mode=instructor.Mode.JSON)
 
-    parts: list[dict[str, Any]] = [
-        {
-            "type": "text",
-            "text": (
-                f"Estimate the 3D geometry of the object from these {len(frames)} "
-                f"360° keyframes (uniform azimuth, full turn). Frame "
-                f"indices: {frame_indices}. Return only the JSON."
-            ),
-        }
-    ]
+    brief = (
+        f"Estimate the 3D geometry of the object from these {len(frames)} "
+        f"360° keyframes (uniform azimuth, full turn). Frame "
+        f"indices: {frame_indices}. Return only the JSON."
+    )
+    if hint and hint.strip():
+        brief += (
+            f"\nObject description (trust it for occluded/unseen parts such as "
+            f"top, bottom or interior; keep one closed surface): {hint.strip()}"
+        )
+    parts: list[dict[str, Any]] = [{"type": "text", "text": brief}]
     for arr in frames:
         parts.append(
             {
@@ -402,6 +405,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--jpeg-q", type=int, default=72)
     p.add_argument("--max-images", type=int, default=None,
                    help=f"remote views cap (default: BASETEN_MAX_IMAGES or {DEFAULT_MAX_IMAGES})")
+    p.add_argument("--hint", type=str, default=None,
+                   help="object description for unseen parts (remote only; "
+                   "or BASETEN_HINT)")
     return p
 
 
@@ -414,10 +420,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     estimate: GeometryEstimate | None = None
+    hint = (args.hint or os.environ.get("BASETEN_HINT", "")).strip() or None
     if not args.no_remote:
         try:
             estimate = estimate_remote(frames, indices, args.max_side, args.jpeg_q,
-                                       args.max_images)
+                                       args.max_images, hint)
             log.info("Remote geometry OK: %s", estimate.summary())
         except BasetenConfigError as exc:
             log.warning("Remote not configured (%s); using local fallback.", exc)
@@ -432,6 +439,8 @@ def main(argv: list[str] | None = None) -> int:
             log.error("Local fallback failed: %s", exc)
             return 1
 
+    if hint and "[hint]" not in estimate.notes:
+        estimate.notes = f"[hint] {hint} | {estimate.notes}".strip()[:2000]
     out = args.out or (args.keyframes_dir / "geometry.json")
     out.write_text(estimate.model_dump_json(indent=2), encoding="utf-8")
     print(json.dumps({"out": str(out), **estimate.summary()}, indent=2))
