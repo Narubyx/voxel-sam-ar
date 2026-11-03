@@ -317,9 +317,16 @@ def estimate_from_silhouettes(
     if not valid:
         raise GeometryValidationError("All masks are empty.")
 
-    # Per-view normalization: each view's bbox IS the object (zoom-invariant,
-    # exact height span). A global median scale breaks when masks vary
-    # (stand included or not, camera drift) — it once overshot 27%.
+    # Common vertical band (bbox intersection): with a fixed camera the mug
+    # occupies the same rows in every view — only the stand inclusion varies.
+    # Sampling identical rows everywhere keeps rings coplanar (smooth tube)
+    # and crops stand rows out; the final rescale fixes exact height.
+    y0c = max(bboxes[i][0] for i in valid)  # type: ignore[index]
+    y1c = min(bboxes[i][1] for i in valid)  # type: ignore[index]
+    if not y1c > y0c:
+        raise BasetenConfigError("No common vertical band across views.")
+    s = height_m / (y1c - y0c + 1)  # meters per pixel
+    horizon = (y0c + y1c) / 2.0
     n_total = len(frames)
     n_valid = len(valid)
     n_scan = max(2, min(24, 1022 // max(1, 2 * n_valid)))
@@ -327,15 +334,12 @@ def estimate_from_silhouettes(
     verts: list[list[float]] = []
     norms: list[list[float]] = []
     grid: dict[tuple[int, int, int], int] = {}  # (rank_valid, slot, side) -> idx
+    by_position: dict[tuple[float, float, float], int] = {}
 
     for rank, i in enumerate(valid):
         theta = 2.0 * np.pi * i / n_total  # azimuth by position in the sequence
         right = np.array([-np.sin(theta), 0.0, np.cos(theta)])
-        y0, y1 = bboxes[i]  # type: ignore[misc]
-        span = max(1, y1 - y0)
-        s_view = height_m / span
-        horizon_view = (y0 + y1) / 2.0
-        rows = np.linspace(y0, y1, n_scan).round().astype(int)
+        rows = np.linspace(y0c, y1c, n_scan).round().astype(int)
         for slot, r in enumerate(rows):
             run = _longest_run(masks[i][r])
             if run is None:
@@ -347,13 +351,19 @@ def estimate_from_silhouettes(
                 if run is None:
                     continue
             for side, u in enumerate(run):
-                du = (u - cx_img) * s_view
-                y = (r - horizon_view) * s_view
+                du = (u - cx_img) * s
+                y = (r - horizon) * s
                 p = du * right + np.array([0.0, y, 0.0])
                 n = np.sign(du) * right if abs(du) > 1e-12 else np.array([0.0, 1.0, 0.0])
-                grid[(rank, slot, side)] = len(verts)
-                verts.append([float(p[0]), float(p[1]), float(p[2])])
-                norms.append([float(n[0]), float(n[1]), float(n[2])])
+                key = (round(float(p[0]), 9), round(float(p[1]), 9), round(float(p[2]), 9))
+                existing = by_position.get(key)
+                if existing is None:
+                    by_position[key] = len(verts)
+                    grid[(rank, slot, side)] = len(verts)
+                    verts.append([float(p[0]), float(p[1]), float(p[2])])
+                    norms.append([float(n[0]), float(n[1]), float(n[2])])
+                else:
+                    grid[(rank, slot, side)] = existing
 
     edges: list[list[int]] = []
     for (rank, slot, side), vi in grid.items():
@@ -365,10 +375,13 @@ def estimate_from_silhouettes(
             edges.append([vi, nxt])
 
     faces: list[list[int]] = []
+    # Single-side emission: one silhouette edge already tiles the full 360°
+    # wall (every feature is some view's left edge). Emitting both sides only
+    # creates duplicate faces that repair drops non-deterministically.
     for rank in range(n_valid):
         rn = (rank + 1) % n_valid
         for slot in range(n_scan - 1):
-            for side in (0, 1):
+            for side in (0,):
                 a = grid.get((rank, slot, side))
                 b = grid.get((rn, slot, side))
                 c = grid.get((rn, slot + 1, side))
@@ -376,6 +389,15 @@ def estimate_from_silhouettes(
                 if None in (a, b, c, d):
                     continue
                 assert a is not None and b is not None and c is not None and d is not None
+                if len({a, b, c, d}) < 4:
+                    # Merged vertices (symmetric views sharing a point): keep
+                    # the surviving triangle when the repeat is a quad edge.
+                    if a == c or b == d:
+                        continue
+                    tri = list(dict.fromkeys((a, b, c, d)))
+                    if len(tri) == 3:
+                        faces.append(tri)
+                    continue
                 faces.append([a, b, c])
                 faces.append([a, c, d])
 
@@ -387,7 +409,7 @@ def estimate_from_silhouettes(
     for rank in range(n_valid):
         rn = (rank + 1) % n_valid
         for slot, apex, flip in ((n_scan - 1, top_idx, False), (0, bot_idx, True)):
-            for side in (0, 1):
+            for side in (0,):
                 a = grid.get((rank, slot, side))
                 b = grid.get((rn, slot, side))
                 if a is None or b is None:
@@ -395,7 +417,7 @@ def estimate_from_silhouettes(
                 faces.append([apex, b, a] if flip else [apex, a, b])
 
     used_frames = [frame_indices[i] for i in valid]
-    return GeometryEstimate(
+    estimate = GeometryEstimate(
         source="silhouette_fallback",
         vertices=verts,
         normals=norms,
@@ -407,9 +429,11 @@ def estimate_from_silhouettes(
         base_color=dominant_color(frames),
         notes=(
             f"Silhouette fallback: uniform 360° orbit, {n_valid}/{n_total} valid "
-            f"views, {n_scan} scanlines, per-view scale to height {height_m} m."
+            f"views, {n_scan} scanlines, common-band scale + rescale to {height_m} m."
         ),
     )
+    _rescale_to_height(estimate, height_m)
+    return estimate
 
 
 def _rescale_to_height(estimate: GeometryEstimate, target: float) -> None:
