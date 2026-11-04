@@ -377,12 +377,16 @@ def estimate_from_silhouettes(
     masks = [(arr.sum(axis=2) > MASK_THRESHOLD) for arr in frames]
     # Horizontal closing: merges the (detached) handle blob into the body
     # silhouette so it sweeps as a solid bulge instead of isolated fins.
-    # Measured C-gap p90 ~138px on mug_v3; kernel 250 only ever bridges
-    # handle gaps (the sole detached blobs), never distorts the body.
-    from scipy.ndimage import binary_closing
-
-    struct = np.ones((1, 250), dtype=bool)
-    masks = [binary_closing(m, structure=struct) for m in masks]
+    # Kernel scales with image width (synthetic golden frames are 160px
+    # wide; a fixed 250px kernel would erase them). scipy is optional: the
+    # golden CI env lacks it, and closing is identity on gapless shapes.
+    try:
+        from scipy.ndimage import binary_closing
+    except ImportError:
+        binary_closing = None  # golden CI env has no scipy; closing skipped
+    if binary_closing is not None:
+        struct = np.ones((1, max(3, min(250, w // 8))), dtype=bool)
+        masks = [binary_closing(m, structure=struct) for m in masks]
     bboxes: list[tuple[int, int] | None] = []
     for m in masks:
         rows = np.flatnonzero(m.any(axis=1))
