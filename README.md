@@ -43,6 +43,22 @@ fully reproducible from this repo:
 The `silhouette_fallback` in `baseten/infer.py` is the deterministic backup when
 the remote call fails; the demo model above is 100% Meta-models generated.
 
+## Agentic mesh loop (Best Agentic Use-Case)
+
+`agent/loop.py` drives `muse-spark-1.3`: each cycle the model writes a repair
+script (`cycle_NN.py`, using only `agent/mesh_tools.py`), the harness executes
+it and verifies watertightness / winding / euler / fidelity gate. Real arc
+from `run_107a16347283` (no human in the loop):
+
+- cycle 02: `ok: false` — `mesh holes: 165 boundary edges` (dense attempt)
+- cycle 04: `ok: false` — `mesh holes: 12 boundary edges`
+- cycle 05: `ok: false` — `mesh holes: 10 boundary edges`
+- cycle 06: `ok: true` — 42v/80f watertight, euler 2 → shipped after display pass
+
+Geometry reasoning runs on the open-weights model
+`meta-models/muse-spark-open-1026`, served through Baseten (see
+`baseten/infer.py`); segmentation is SAM `sam_vith_optflow` on Modal.
+
 ## Quickstart — Step 1 (Modal + SAM)
 
 Requirements: Python 3.11+, Modal account (`pip install modal && modal setup`).
