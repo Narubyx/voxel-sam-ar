@@ -86,6 +86,17 @@ export default function App() {
       setSegmentErr('Pick an .mp4 video first.');
       return;
     }
+    // Modal's frontend 303-redirects large multipart uploads without CORS
+    // headers, which browsers refuse to follow (cryptic HTTP 0). Fail fast
+    // with guidance instead.
+    const MAX_MB = 50;
+    if (file.size > MAX_MB * 1024 * 1024) {
+      setSegmentErr(
+        `That file is ${(file.size / 1048576).toFixed(0)} MB — keep videos under ${MAX_MB} MB ` +
+          `(trim or re-encode, e.g. ffmpeg -crf 28) so the upload isn't redirected.`,
+      );
+      return;
+    }
     const px = Number(x);
     const py = Number(y);
     const n = Number(numKf);
@@ -160,6 +171,11 @@ export default function App() {
             {segmenting ? 'Segmenting…' : 'Segment'}
           </button>
         </div>
+        {file && (
+          <p className="muted small">
+            Selected: {file.name} · {(file.size / 1048576).toFixed(1)} MB
+          </p>
+        )}
         {segmentErr && <p className="error">{segmentErr}</p>}
         {segment && (
           <div>

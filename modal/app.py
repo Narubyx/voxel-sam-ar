@@ -580,6 +580,10 @@ class SamVideoAdapter:
     gpu=MODAL_GPU,
     volumes={"/jobs": volume, "/models": models_volume},
     timeout=900,
+    # Demo day: keep 1 GPU warm so /segment answers in seconds, not minutes
+    # (cold starts get killed on long-silent browser connections). Scale back
+    # to 0 after the submission video is recorded.
+    min_containers=1,
 )
 @modal.concurrent(max_inputs=1)
 class Segmenter:
