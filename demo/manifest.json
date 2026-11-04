@@ -1,0 +1,51 @@
+{
+  "backend": "local",
+  "cycles": [
+    {
+      "cycle": 0,
+      "duration_s": 0.9204744000162464,
+      "exit_code": 0,
+      "kind": "baseline",
+      "report": {
+        "errors": [],
+        "ok": true,
+        "stats": {
+          "area": 0.03429538417589888,
+          "bbox_max": [
+            0.04093085635068699,
+            0.04,
+            0.055775700934579446
+          ],
+          "bbox_min": [
+            -0.04089887640449438,
+            -0.04,
+            -0.05170492410742649
+          ],
+          "boundary_edges": 0,
+          "degenerate_faces": 0,
+          "euler_number": 2,
+          "faces": 1008,
+          "input": {
+            "faces_in": 2016,
+            "vertices": 1010
+          },
+          "method": "faces+repair",
+          "nonmanifold_edges": 0,
+          "vertices": 506,
+          "volume": 0.00024032502682817523,
+          "watertight": true,
+          "winding_consistent": true
+        }
+      },
+      "stderr_tail": ""
+    }
+  ],
+  "model": null,
+  "run_id": "run_2b4ded13c48b",
+  "status": "success",
+  "usdz": {
+    "converter": "usda+zip",
+    "ok": true,
+    "path": "model.usdz"
+  }
+}

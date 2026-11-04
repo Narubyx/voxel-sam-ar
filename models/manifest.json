@@ -1,0 +1,261 @@
+{
+  "backend": "local",
+  "cycles": [
+    {
+      "cycle": 0,
+      "duration_s": 2.4846013999776915,
+      "exit_code": 0,
+      "kind": "baseline",
+      "report": {
+        "errors": [
+          "low fidelity: input coverage 0.050 > 0.035 (output diverged from input shape; stay close to the input vertices while closing)"
+        ],
+        "ok": false,
+        "stats": {
+          "area": 0.0304360986142255,
+          "bbox_max": [
+            0.0381,
+            0.0381,
+            0.0381
+          ],
+          "bbox_min": [
+            -0.0381,
+            -0.0381,
+            -0.0381
+          ],
+          "boundary_edges": 0,
+          "degenerate_faces": 0,
+          "euler_number": 2,
+          "faces": 64,
+          "input": {
+            "faces_in": 80,
+            "vertices": 44
+          },
+          "method": "faces+repair",
+          "nonmanifold_edges": 0,
+          "vertices": 34,
+          "volume": 9.058040665244447e-05,
+          "watertight": true,
+          "winding_consistent": true
+        }
+      },
+      "stderr_tail": ""
+    },
+    {
+      "cycle": 1,
+      "duration_s": 1.000710699998308,
+      "exit_code": 0,
+      "kind": "model",
+      "report": {
+        "errors": [
+          "low fidelity: input coverage 0.050 > 0.035 (output diverged from input shape; stay close to the input vertices while closing)"
+        ],
+        "ok": false,
+        "stats": {
+          "area": 0.0304360986142255,
+          "bbox_max": [
+            0.0381,
+            0.0381,
+            0.0381
+          ],
+          "bbox_min": [
+            -0.0381,
+            -0.0381,
+            -0.0381
+          ],
+          "boundary_edges": 0,
+          "degenerate_faces": 0,
+          "euler_number": 2,
+          "faces": 64,
+          "nonmanifold_edges": 0,
+          "vertices": 34,
+          "volume": 9.058040665244447e-05,
+          "watertight": true,
+          "winding_consistent": true
+        }
+      },
+      "stderr_tail": ""
+    },
+    {
+      "cycle": 2,
+      "duration_s": 2.1030295999953523,
+      "exit_code": 0,
+      "kind": "model",
+      "report": {
+        "errors": [
+          "mesh holes: 165 boundary edges"
+        ],
+        "ok": false,
+        "stats": {
+          "area": 0.01500992580051774,
+          "bbox_max": [
+            0.06591299921274185,
+            0.05448300018906593,
+            0.015519749373197556
+          ],
+          "bbox_min": [
+            -0.043053001165390015,
+            -0.05448300018906593,
+            -0.026676421985030174
+          ],
+          "boundary_edges": 165,
+          "degenerate_faces": 0,
+          "euler_number": 1,
+          "faces": 3653,
+          "nonmanifold_edges": 0,
+          "vertices": 1910,
+          "volume": -1.929373224464109e-05,
+          "watertight": false,
+          "winding_consistent": true
+        }
+      },
+      "stderr_tail": ""
+    },
+    {
+      "cycle": 3,
+      "duration_s": 1.8258294999832287,
+      "exit_code": 0,
+      "kind": "model",
+      "report": {
+        "errors": [
+          "mesh holes: 165 boundary edges"
+        ],
+        "ok": false,
+        "stats": {
+          "area": 0.014976483731095308,
+          "bbox_max": [
+            0.06591299921274185,
+            0.05448300018906593,
+            0.01550440862774849
+          ],
+          "bbox_min": [
+            -0.043053001165390015,
+            -0.05448300018906593,
+            -0.0266228299587965
+          ],
+          "boundary_edges": 165,
+          "degenerate_faces": 0,
+          "euler_number": 1,
+          "faces": 3653,
+          "nonmanifold_edges": 0,
+          "vertices": 1910,
+          "volume": -1.9224277914654893e-05,
+          "watertight": false,
+          "winding_consistent": true
+        }
+      },
+      "stderr_tail": ""
+    },
+    {
+      "cycle": 4,
+      "duration_s": 1.5849832000094466,
+      "exit_code": 0,
+      "kind": "model",
+      "report": {
+        "errors": [
+          "mesh holes: 12 boundary edges"
+        ],
+        "ok": false,
+        "stats": {
+          "area": 0.006888683019639441,
+          "bbox_max": [
+            0.06096000000000001,
+            0.0381,
+            0.0
+          ],
+          "bbox_min": [
+            -0.026924000000000007,
+            -0.0381,
+            -0.0381
+          ],
+          "boundary_edges": 12,
+          "degenerate_faces": 0,
+          "euler_number": 1,
+          "faces": 20,
+          "nonmanifold_edges": 0,
+          "vertices": 17,
+          "volume": 4.7795421254844455e-05,
+          "watertight": false,
+          "winding_consistent": true
+        }
+      },
+      "stderr_tail": ""
+    },
+    {
+      "cycle": 5,
+      "duration_s": 1.7005528999725357,
+      "exit_code": 0,
+      "kind": "model",
+      "report": {
+        "errors": [
+          "mesh holes: 10 boundary edges"
+        ],
+        "ok": false,
+        "stats": {
+          "area": 0.00760008161414487,
+          "bbox_max": [
+            0.06096000000000001,
+            0.0381,
+            0.0
+          ],
+          "bbox_min": [
+            -0.026924000000000007,
+            -0.0381,
+            -0.0381
+          ],
+          "boundary_edges": 10,
+          "degenerate_faces": 0,
+          "euler_number": 1,
+          "faces": 22,
+          "nonmanifold_edges": 0,
+          "vertices": 17,
+          "volume": 4.8130405212513597e-05,
+          "watertight": false,
+          "winding_consistent": true
+        }
+      },
+      "stderr_tail": ""
+    },
+    {
+      "cycle": 6,
+      "duration_s": 1.730779999983497,
+      "exit_code": 0,
+      "kind": "model",
+      "report": {
+        "errors": [],
+        "ok": true,
+        "stats": {
+          "area": 0.024123011951416647,
+          "bbox_max": [
+            0.06095999851822853,
+            0.038100000470876694,
+            0.038100000470876694
+          ],
+          "bbox_min": [
+            -0.038100000470876694,
+            -0.038100000470876694,
+            -0.038100000470876694
+          ],
+          "boundary_edges": 0,
+          "degenerate_faces": 0,
+          "euler_number": 2,
+          "faces": 80,
+          "nonmanifold_edges": 0,
+          "vertices": 42,
+          "volume": 0.0002379577739884569,
+          "watertight": true,
+          "winding_consistent": true
+        }
+      },
+      "stderr_tail": ""
+    }
+  ],
+  "model": "muse-spark-1.3",
+  "run_id": "run_107a16347283",
+  "status": "success",
+  "usdz": {
+    "converter": "usda+zip",
+    "ok": true,
+    "path": "model.usdz"
+  }
+}
