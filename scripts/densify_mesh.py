@@ -75,61 +75,57 @@ def graft_hollow_top(mesh, wall_m=0.004, floor_lift_m=0.012):
                                 "y_floor": round(float(y_floor), 5),
                                 "loop": len(loop), "cap_faces": int(cap.sum())}}))
 
-    ov = np.asarray(open_mesh.vertices)
-    # The body is a tapered cone (wide rim, narrow base): the bore must be a
-    # frustum hugging the wall, not a cylinder (a cylinder punches through
-    # the cone = side breach = euler -2). Measure the body profile with rays
-    # (away from the handle), center the axis on the body, keep wall_m inside.
-    def _body_r(y, dx, dz):
-        o = np.array([[cx, y, cz]])
-        n = float(np.hypot(dx, dz))
-        d = np.array([[dx / n, 0.0, dz / n]])
-        locs, _, _ = mesh.ray.intersects_location(o, d, multiple_hits=True)
+    # The shell is an origin-centered tapered cone; the handle root (+X solid
+    # reaching the rim) pollutes every +X measurement, so profile the shell
+    # from the clean -X side only and mirror it. The bore is a vertical,
+    # origin-centered multi-ring tool hugging shell-minus-wall at each level.
+    def _shell_r(y):
+        o = np.array([[0.0, y, 0.0]])
+        locs, _, _ = mesh.ray.intersects_location(
+            o, np.array([[-1.0, 0.0, 0.0]]), multiple_hits=True)
         if not len(locs):
-            raise ValueError(f"body profile ray missed at y={y}.")
-        return float(np.hypot(locs[:, 0], locs[:, 2]).min())
+            raise ValueError(f"shell profile ray missed at y={y}.")
+        return float(-locs[:, 0].min())
 
-    _of = np.asarray(open_mesh.faces)
-    _oc = ov[_of].mean(axis=1)
-    band = ((np.abs(_oc[:, 2]) < 0.015) & (np.abs(_oc[:, 1]) < 0.020)
-            & (_oc[:, 0] < 0.0335))
-    if not band.any():
-        raise ValueError("no body band found for bore centering.")
-    cx = float(_oc[band][:, 0].mean())
-    cz = float(_oc[band][:, 2].mean())
     top = y_top + 0.005
-    r_top = _body_r(y_top - 0.008, -1, 0) - wall_m + 0.008 * 0.25
-    r_bot = min(_body_r(y_floor + 0.002, -1, 0),
-                _body_r(y_floor + 0.002, 0, 1),
-                _body_r(y_floor + 0.002, 0, -1)) - wall_m
-    if not r_bot > 0.012:
-        raise ValueError(f"bore bottom too narrow ({r_bot:.4f}).")
+    levels = [top, y_top - 0.008, 0.0, -0.015, y_floor]
+    radii = []
+    for i, yl in enumerate(levels):
+        if i == 0:
+            radii.append(_shell_r(levels[1]) - wall_m
+                         + (levels[0] - levels[1]) * 0.25 + 0.003)
+        else:
+            radii.append(_shell_r(yl) - wall_m)
+    if not radii[-1] > 0.010:
+        raise ValueError(f"bore bottom too narrow ({radii[-1]:.4f}).")
+    print(json.dumps({"bore_levels":
+                      [[round(y, 5), round(r, 5)]
+                       for y, r in zip(levels, radii)]}))
     n_sec = 24
     th = np.linspace(0, 2 * np.pi, n_sec, endpoint=False)
-    ring_top = np.column_stack([cx + r_top * np.cos(th),
-                                np.full(n_sec, top),
-                                cz + r_top * np.sin(th)])
-    ring_bot = np.column_stack([cx + r_bot * np.cos(th),
-                                np.full(n_sec, y_floor),
-                                cz + r_bot * np.sin(th)])
-    fc = np.array([[cx, y_floor, cz]])
-    tc = np.array([[cx, top, cz]])
-    fv = np.vstack([ring_top, ring_bot, fc, tc])
+    rings = [np.column_stack([r * np.cos(th), np.full(n_sec, yl),
+                              r * np.sin(th)])
+             for yl, r in zip(levels, radii)]
+    n_lv = len(levels)
+    fc = np.array([[0.0, y_floor, 0.0]])
+    tc = np.array([[0.0, top, 0.0]])
+    fv = np.vstack(rings + [fc, tc])
     ff = []
     for k in range(n_sec):
         k2 = (k + 1) % n_sec
-        ff.append([k, n_sec + k, n_sec + k2])
-        ff.append([k, n_sec + k2, k2])
-        ff.append([2 * n_sec, n_sec + k2, n_sec + k])
-        ff.append([2 * n_sec + 1, k, k2])
+        for lv in range(n_lv - 1):
+            a0, a1 = lv * n_sec + k, lv * n_sec + k2
+            b0, b1 = (lv + 1) * n_sec + k, (lv + 1) * n_sec + k2
+            ff.append([a0, b0, b1])
+            ff.append([a0, b1, a1])
+        ff.append([n_lv * n_sec, (n_lv - 1) * n_sec + k2,
+                   (n_lv - 1) * n_sec + k])
+        ff.append([n_lv * n_sec + 1, k, k2])
     cyl = trimesh.Trimesh(fv, ff, process=True)
     if not cyl.is_watertight or not cyl.is_winding_consistent:
         raise ValueError("frustum tool is not a clean volume.")
     if cyl.volume < 0:
         cyl.invert()
-    print(json.dumps({"bore": {"r_top": round(r_top, 5),
-                               "r_bot": round(r_bot, 5),
-                               "cx": round(cx, 5), "cz": round(cz, 5)}}))
     try:
         out = trimesh.boolean.difference([mesh, cyl], engine="manifold")
     except Exception as exc:
