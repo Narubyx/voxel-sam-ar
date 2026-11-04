@@ -86,14 +86,13 @@ export default function App() {
       setSegmentErr('Pick an .mp4 video first.');
       return;
     }
-    // Modal's frontend 303-redirects large multipart uploads without CORS
-    // headers, which browsers refuse to follow (cryptic HTTP 0). Fail fast
-    // with guidance instead.
-    const MAX_MB = 50;
+    // Server rejects videos over its own limit; large uploads may also be
+    // redirected mid-flight on some networks (surfaced as HTTP 0 below).
+    const MAX_MB = 200;
     if (file.size > MAX_MB * 1024 * 1024) {
       setSegmentErr(
-        `That file is ${(file.size / 1048576).toFixed(0)} MB — keep videos under ${MAX_MB} MB ` +
-          `(trim or re-encode, e.g. ffmpeg -crf 28) so the upload isn't redirected.`,
+        `That file is ${(file.size / 1048576).toFixed(0)} MB — the backend caps videos at ${MAX_MB} MB ` +
+          `(trim or re-encode, e.g. ffmpeg -crf 28).`,
       );
       return;
     }
@@ -112,7 +111,13 @@ export default function App() {
     try {
       setSegment(await postSegment(MODAL_URL, file, px, py, n));
     } catch (e: unknown) {
-      setSegmentErr(errText(e));
+      let msg = errText(e);
+      if (e instanceof ApiError && e.status === 0) {
+        msg +=
+          ' — the upload died in transit (large files sometimes get redirected by the ' +
+          'hosting proxy on some networks); try a video under 50 MB.';
+      }
+      setSegmentErr(msg);
     } finally {
       setSegmenting(false);
     }
